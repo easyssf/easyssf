@@ -1,0 +1,76 @@
+# Runs the receiver conformance tests of easyssf-tests-conformance against the OpenID conformance
+# suite, which Testcontainers starts on the runner. One job per test plan, each with its own suite.
+# See easyssf-tests-conformance/README.md for the plans and the suite image.
+name: Conformance
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite-image:
+        description: >-
+          Conformance suite image. Empty: the pinned release below.
+        required: false
+        default: ''
+      nginx-image:
+        description: >-
+          Its nginx image. Empty: the pinned release below.
+        required: false
+        default: ''
+  # Later: nightly, once a suite release contains the fix for the poll race of release-v5.3.1
+  # (see "Newer suite than the released image" in easyssf-tests-conformance/README.md). Point the
+  # pinned images below at that release and uncomment:
+  # schedule:
+  #   - cron: '17 2 * * *'   # 02:17 UTC, every night
+
+env:
+  # registry.gitlab.com/openid/conformance-suite:release-v5.3.1 and its nginx, pinned by digest so
+  # that every run uses the same suite. The registry's "latest" tag is older than this release.
+  PINNED_SUITE_IMAGE: registry.gitlab.com/openid/conformance-suite@sha256:69495f453a920c262f66e5e72abd12501c33e05ce88051cddf300c00621a4d70
+  PINNED_NGINX_IMAGE: registry.gitlab.com/openid/conformance-suite/nginx@sha256:6ea3f4b8854f1f3626c81350900962d9e5f86424791d8e72b378a26ee2f4c105
+
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        plan:
+          - Ssf10PushReceiverConformanceTest
+          - Ssf10PollReceiverConformanceTest
+          - CaepInterop10PushReceiverConformanceTest
+          - CaepInterop10PollReceiverConformanceTest
+    name: ${{ matrix.plan }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - name: Build the modules the receiver under test needs
+        run: ./mvnw -B --no-transfer-progress -DskipTests -pl easyssf-tests-conformance -am install
+
+      - name: Run the ${{ matrix.plan }} plan
+        env:
+          SUITE_IMAGE: ${{ inputs.suite-image || env.PINNED_SUITE_IMAGE }}
+          NGINX_IMAGE: ${{ inputs.nginx-image || env.PINNED_NGINX_IMAGE }}
+        run: >-
+          ./mvnw -B --no-transfer-progress -pl easyssf-tests-conformance -Pconformance verify
+          -Dtest=${{ matrix.plan }}
+          -Dcts.suite.image="$SUITE_IMAGE"
+          -Dcts.suite.nginx-image="$NGINX_IMAGE"
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: conformance-${{ matrix.plan }}
+          path: easyssf-tests-conformance/target/surefire-reports/
+          if-no-files-found: ignore
+          retention-days: 14

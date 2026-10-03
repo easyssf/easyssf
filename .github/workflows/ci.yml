@@ -1,0 +1,45 @@
+# Builds every module and runs the unit and integration tests. The conformance tests against the
+# OpenID conformance suite are tagged and excluded by the normal build, see conformance.yml.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  # Later: run for every pull request. Before enabling, decide who may trigger a run under
+  # Settings > Actions > General > "Fork pull request workflows" / "Approval for running
+  # workflows from outside collaborators".
+  # pull_request:
+  #   branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - name: Build and test
+        run: ./mvnw -B --no-transfer-progress verify
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports
+          path: '**/target/surefire-reports/*.xml'
+          if-no-files-found: ignore
+          retention-days: 14

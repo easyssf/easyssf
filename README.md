@@ -485,4 +485,5 @@ and take a few minutes per plan:
 ```
 
 See [`easyssf-tests-conformance`](easyssf-tests-conformance) for the details, the test plans and how to run
-them against a newer suite than the released one.
+them against a newer suite than the released one. The CI builds are described in
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
