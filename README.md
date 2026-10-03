@@ -6,6 +6,33 @@ in Java: a framework independent **receiver** library and a **Spring Boot starte
 Spring Boot application into an SSF receiver. Inspired by the Quarkus extension
 [quarkus-openid-ssf](https://github.com/quarkiverse/quarkus-openid-ssf).
 
+**Turn an ordinary Java or Spring application into an SSF receiver without implementing SET
+validation, metadata discovery, PUSH and POLL delivery, stream management and replay protection
+yourself.** With the starter, reacting to a security event is a bean and one property:
+
+```java
+@Bean
+SsfEventHandler securityEvents() {
+    return (event) -> {
+        if (event.hasEvent("CaepSessionRevoked")) {
+            SsfSubject subject = event.subjectFor("CaepSessionRevoked");
+            // end what you hold for subject.sessionId() or subject.subject()
+        }
+    };
+}
+```
+
+```yaml
+easyssf:
+  receiver:
+    transmitter-issuer: https://idp.example/realms/demo
+```
+
+Resource servers and OIDC clients do not even need the bean: with Spring Security on the classpath,
+access tokens of a revoked session are rejected and local sessions are ended as the events arrive.
+The receiver is tested against the OpenID conformance suite's SSF and CAEP receiver test plans, with
+PUSH and POLL delivery.
+
 | | |
 |---|---|
 | **Status** | Experimental |
