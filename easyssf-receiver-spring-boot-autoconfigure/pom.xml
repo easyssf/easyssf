@@ -96,6 +96,12 @@
             <artifactId>spring-boot-health</artifactId>
             <optional>true</optional>
         </dependency>
+        <dependency>
+            <!-- Health is annotated with Jackson annotations, javac warns if it cannot resolve them -->
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+            <optional>true</optional>
+        </dependency>
 
         <dependency>
             <groupId>org.easyssf</groupId>
