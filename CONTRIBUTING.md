@@ -17,6 +17,14 @@ exception.
   jar's artifact has no parent, no imported BOM and every version resolved, so consumers do not see the
   build structure of this repository. The generated `.flattened-pom.xml` files are ignored by git and
   removed by `./mvnw clean`. The parent POM itself is not published.
+- **Java modules**: `easyssf-core`, `easyssf-test`, `easyssf-receiver` and `easyssf-receiver-jdbc`
+  are explicit modules (`module-info.java`, names `org.easyssf.core`, `org.easyssf.test`,
+  `org.easyssf.receiver`, `org.easyssf.receiver.jdbc`); Micrometer is `requires static`. The Spring
+  Boot modules and the conformance harness are automatic modules, named by the `Automatic-Module-Name`
+  manifest entry, which every module sets through the `automatic.module.name` property. A new
+  package in an explicit module needs an `exports` line. Surefire runs the tests of the explicit
+  modules on the module path; `easyssf-receiver-jdbc` adds `java.naming` for test compilation
+  because H2's data source implements a `javax.naming` interface.
 - **Every module ships an SBOM**, `target/bom.json` in CycloneDX format, attached to the artifact with
   the classifier `cyclonedx`. It lists the compile and runtime dependencies.
 - **`.mvn/jvm.config`** silences the schema validator inside the CycloneDX plugin, which warns about

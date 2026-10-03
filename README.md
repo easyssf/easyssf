@@ -548,7 +548,9 @@ Tested with the SSF transmitter of Keycloak 26.8 (`--features=ssf`), see the [ex
 ## Using the receiver without Spring Boot
 
 `easyssf-receiver` has no framework dependencies. Assemble the parts you need and call them from
-your framework:
+your framework. `easyssf-core`, `easyssf-receiver`, `easyssf-receiver-jdbc` and `easyssf-test` are
+Java modules (`org.easyssf.core`, `org.easyssf.receiver`, ...) and work on the module path; the
+Spring Boot modules are automatic modules.
 
 ```xml
 <dependency>
