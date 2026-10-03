@@ -15,8 +15,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * <p>
  * The settings of a transmitter ({@link SsfTransmitterProperties}) at
  * {@code easyssf.receiver.*} configure the {@link SsfTransmitter#DEFAULT_NAME default}
- * transmitter; {@link #getTransmitters() easyssf.receiver.transmitters.<name>.*} adds
- * further ones, each complete on its own. Everything else is shared by all transmitters.
+ * transmitter; {@link #getTransmitters() easyssf.receiver.transmitters.&lt;name&gt;.*}
+ * adds further ones, each complete on its own. Everything else is shared by all
+ * transmitters.
  */
 @ConfigurationProperties("easyssf.receiver")
 public class SsfReceiverProperties extends SsfTransmitterProperties {
