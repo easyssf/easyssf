@@ -163,7 +163,9 @@ its `claims()`. The shortcuts `subject()`, `sessionId()`, `email()` and `opaqueI
 cases.
 
 Event types are identified by their URIs; the aliases (`CaepSessionRevoked`, ...) are a convenience
-of easyssf, use the URIs where you persist or configure event types. `eventTimestamp()` returns the
+of easyssf, use the URIs where you persist event types. Your own aliases, for vendor specific event
+types, go into `easyssf.receiver.event-aliases` (or `SsfEventTypes.registerAlias`) and work wherever
+an event type is named; they cannot redefine a built-in alias. `eventTimestamp()` returns the
 `event_timestamp` of the event, which CAEP defines in seconds; a value that is clearly milliseconds is
 accepted as well, as some transmitters send that.
 
@@ -375,6 +377,7 @@ poll. Switch it off with `management.health.easyssf.enabled=false`.
 | `easyssf.receiver.allow-insecure-http` | `false` | Accepts `http` for the transmitter issuer and the endpoints it publishes on any host, with a warning on startup. For development only. |
 | `easyssf.receiver.expected-audience` | | When set, every SET must contain it in `aud`. |
 | `easyssf.receiver.delivery-method` | `push` | `push` or `poll`. |
+| `easyssf.receiver.event-aliases.*` | | Aliases for event type URIs, e.g. `AcmeLogin: https://events.acme.example/login`, usable wherever an event type is named. |
 | `easyssf.receiver.http.use-rest-client` | `true` | Call the transmitter with the `RestClient` of the application if it has a `RestClient.Builder`. |
 | `easyssf.receiver.http.connect-timeout` / `read-timeout` | `5s` | Calls to the transmitter. Unset, `spring.http.clients.*` applies to the `RestClient` before the 5 seconds do. |
 | `easyssf.receiver.http.user-agent` | default of the HTTP client | `User-Agent` header for calls to the transmitter. |

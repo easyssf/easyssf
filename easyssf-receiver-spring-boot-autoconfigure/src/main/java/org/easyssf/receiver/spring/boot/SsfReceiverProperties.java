@@ -3,7 +3,9 @@ package org.easyssf.receiver.spring.boot;
 import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.easyssf.core.SsfDeliveryMethod;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -54,6 +56,13 @@ public class SsfReceiverProperties {
      * 'poll' from an endpoint of the transmitter.
      */
     private SsfDeliveryMethod deliveryMethod = SsfDeliveryMethod.PUSH;
+
+    /**
+     * Aliases for event type URIs, e.g. 'AcmeLogin: https://events.acme.example/login',
+     * usable wherever an event type is named. They add to the built-in aliases of the
+     * SSF, CAEP and RISC event types and cannot redefine one.
+     */
+    private final Map<String, String> eventAliases = new LinkedHashMap<>();
 
     /**
      * Access token to authenticate with at the stream management and poll endpoints of
@@ -129,6 +138,10 @@ public class SsfReceiverProperties {
 
     public void setExpectedAudience(String expectedAudience) {
         this.expectedAudience = expectedAudience;
+    }
+
+    public Map<String, String> getEventAliases() {
+        return this.eventAliases;
     }
 
     public SsfDeliveryMethod getDeliveryMethod() {

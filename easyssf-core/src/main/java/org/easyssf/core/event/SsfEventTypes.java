@@ -1,7 +1,9 @@
 package org.easyssf.core.event;
 
-import java.util.LinkedHashMap;
+import java.util.Collections;
 import java.util.Map;
+import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Event type URIs defined by OpenID SSF, CAEP and RISC, together with short aliases (for
@@ -62,9 +64,9 @@ public final class SsfEventTypes {
 
     public static final String RISC_RECOVERY_INFORMATION_CHANGED = RISC + "recovery-information-changed";
 
-    private static final Map<String, String> URI_BY_ALIAS = new LinkedHashMap<>();
+    private static final Map<String, String> URI_BY_ALIAS = new ConcurrentHashMap<>();
 
-    private static final Map<String, String> ALIAS_BY_URI = new LinkedHashMap<>();
+    private static final Map<String, String> ALIAS_BY_URI = new ConcurrentHashMap<>();
 
     static {
         register("SsfStreamVerification", SSF_STREAM_VERIFICATION);
@@ -98,6 +100,56 @@ public final class SsfEventTypes {
     private static void register(String alias, String uri) {
         URI_BY_ALIAS.put(alias, uri);
         ALIAS_BY_URI.put(uri, alias);
+    }
+
+    /**
+     * Registers an alias for an event type URI, for example of a vendor specific event
+     * type, so that it can be used wherever an event type is named: in handlers, in the
+     * events requested of a stream, in configuration. Aliases are a convenience of
+     * easyssf, the URIs stay the canonical names.
+     *
+     * <p>
+     * Aliases do not conflict: an alias cannot be redefined to another URI, neither a
+     * built-in one nor one registered before. A URI may have several aliases; the first
+     * one registered is the one {@link #aliasOf(String)} returns. Registering a mapping
+     * that exists already does nothing.
+     * @param alias the alias, a name without {@code :} or {@code /} so that it cannot be
+     * mistaken for a URI
+     * @param uri the absolute event type URI
+     * @throws IllegalArgumentException if the alias or the URI is not well-formed, or the
+     * alias is already mapped to another URI
+     */
+    public static synchronized void registerAlias(String alias, String uri) {
+        if (alias == null || alias.isBlank() || alias.contains(":") || alias.contains("/")
+                || !alias.equals(alias.strip())) {
+            throw new IllegalArgumentException(
+                    "An event type alias must be a name without ':' or '/' and surrounding whitespace: '" + alias
+                            + "'");
+        }
+        if (uri == null || uri.isBlank() || !uri.contains(":") || !uri.equals(uri.strip())) {
+            throw new IllegalArgumentException("An event type must be an absolute URI: '" + uri + "'");
+        }
+        String existing = URI_BY_ALIAS.get(alias);
+        if (existing != null && !existing.equals(uri)) {
+            throw new IllegalArgumentException(
+                    "The event type alias '" + alias + "' is already mapped to " + existing + ", not to " + uri);
+        }
+        URI_BY_ALIAS.put(alias, uri);
+        ALIAS_BY_URI.putIfAbsent(uri, alias);
+    }
+
+    /**
+     * @return the known aliases and their event type URIs, built-in and registered
+     */
+    public static Map<String, String> aliases() {
+        return Collections.unmodifiableMap(new TreeMap<>(URI_BY_ALIAS));
+    }
+
+    /**
+     * @return whether the name is a known alias
+     */
+    public static boolean isAlias(String name) {
+        return name != null && URI_BY_ALIAS.containsKey(name);
     }
 
     /**

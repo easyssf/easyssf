@@ -8,6 +8,7 @@ import java.util.stream.Stream;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.easyssf.core.SsfDeliveryMethod;
+import org.easyssf.core.event.SsfEventTypes;
 import org.easyssf.core.stream.SsfStreamConfiguration;
 import org.easyssf.receiver.event.SsfEventHandler;
 import org.easyssf.receiver.http.JdkSsfHttpClient;
@@ -63,6 +64,21 @@ import org.springframework.util.StringUtils;
 public final class SsfReceiverAutoConfiguration {
 
     private static final Log logger = LogFactory.getLog(SsfReceiverAutoConfiguration.class);
+
+    /**
+     * Registers the configured event type aliases before any bean resolves event types.
+     */
+    SsfReceiverAutoConfiguration(SsfReceiverProperties properties) {
+        properties.getEventAliases().forEach((alias, uri) -> {
+            try {
+                SsfEventTypes.registerAlias(alias, uri);
+            }
+            catch (IllegalArgumentException ex) {
+                throw new InvalidConfigurationPropertyValueException("easyssf.receiver.event-aliases." + alias, uri,
+                        ex.getMessage());
+            }
+        });
+    }
 
     @Bean
     @ConditionalOnMissingBean(SsfHttpClient.class)

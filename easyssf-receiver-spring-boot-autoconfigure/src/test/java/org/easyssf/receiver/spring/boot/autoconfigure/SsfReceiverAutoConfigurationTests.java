@@ -4,6 +4,7 @@ import java.net.URI;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+import org.easyssf.core.event.SsfEventTypes;
 import org.easyssf.receiver.http.JdkSsfHttpClient;
 import org.easyssf.receiver.http.SsfHttpClient;
 import org.easyssf.receiver.http.SsfHttpRequest;
@@ -76,6 +77,27 @@ class SsfReceiverAutoConfigurationTests {
                 AutoConfigurations.of(DispatcherServletAutoConfiguration.class, WebMvcAutoConfiguration.class,
                         SecurityAutoConfiguration.class, ServletWebSecurityAutoConfiguration.class))
         .withPropertyValues("easyssf.receiver.transmitter-issuer=https://idp.example/realms/test");
+
+    @Test
+    void registersConfiguredEventTypeAliases() {
+        this.webContextRunner
+            .withPropertyValues("easyssf.receiver.event-aliases.AcmeLogin=https://events.acme.example/login",
+                    "easyssf.receiver.stream.events-requested=AcmeLogin")
+            .run((context) -> {
+                assertThat(context).hasNotFailed();
+                assertThat(SsfEventTypes.resolve("AcmeLogin")).isEqualTo("https://events.acme.example/login");
+            });
+    }
+
+    @Test
+    void rejectsEventTypeAliasThatRedefinesABuiltInOne() {
+        this.webContextRunner
+            .withPropertyValues("easyssf.receiver.event-aliases.CaepSessionRevoked=https://events.acme.example/x")
+            .run((context) -> assertThat(context).hasFailed()
+                .getFailure()
+                .rootCause()
+                .hasMessageContaining("easyssf.receiver.event-aliases.CaepSessionRevoked"));
+    }
 
     @Test
     void configuresReceiverWithPushEndpointAndBothIntegrations() {
