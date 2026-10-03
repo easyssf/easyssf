@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.easyssf</groupId>
+        <artifactId>easyssf-parent</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+    <artifactId>easyssf-receiver-spring-boot-conformance-tests</artifactId>
+    <name>easyssf-receiver-spring-boot-conformance-tests</name>
+    <description>Receiver under test for the OpenID Foundation conformance suite's SSF receiver tests</description>
+
+    <properties>
+        <automatic.module.name>org.easyssf.conformance.spring</automatic.module.name>
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <!-- the tests against the OpenID conformance suite need Docker or a running suite, see README.md -->
+        <conformance.groups/>
+        <conformance.excludedGroups>conformance</conformance.excludedGroups>
+    </properties>
+
+
+    <dependencies>
+        <!-- the receiver is assembled from the plain library for every test run, see ConformanceRun -->
+        <dependency>
+            <groupId>org.easyssf</groupId>
+            <artifactId>easyssf-receiver</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.easyssf</groupId>
+            <artifactId>easyssf-test-conformance</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+            <exclusions>
+                <!-- nothing here mocks; without Mockito on the class path it does not attach itself -->
+                <exclusion>
+                    <groupId>org.mockito</groupId>
+                    <artifactId>mockito-core</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.mockito</groupId>
+                    <artifactId>mockito-junit-jupiter</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.easyssf</groupId>
+            <artifactId>easyssf-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.springframework.boot</groupId>
+                            <artifactId>spring-boot-configuration-processor</artifactId>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <groups>${conformance.groups}</groups>
+                    <excludedGroups>${conformance.excludedGroups}</excludedGroups>
+                    <!-- the suite can run one module at a time, and they take a while -->
+                    <forkedProcessTimeoutInSeconds>5400</forkedProcessTimeoutInSeconds>
+                    <systemPropertyVariables>
+                        <cts.suite.image>${cts.suite.image}</cts.suite.image>
+                        <cts.suite.nginx-image>${cts.suite.nginx-image}</cts.suite.nginx-image>
+                        <cts.suite.mongodb-image>${cts.suite.mongodb-image}</cts.suite.mongodb-image>
+                        <cts.suite.port>${cts.suite.port}</cts.suite.port>
+                        <cts.receiver.port>${cts.receiver.port}</cts.receiver.port>
+                        <cts.receiver.push-url>${cts.receiver.push-url}</cts.receiver.push-url>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <!-- runs only the tests against the OpenID conformance suite: mvn -Pconformance verify -->
+            <id>conformance</id>
+            <properties>
+                <conformance.groups>conformance</conformance.groups>
+                <conformance.excludedGroups/>
+            </properties>
+        </profile>
+    </profiles>
+
+</project>

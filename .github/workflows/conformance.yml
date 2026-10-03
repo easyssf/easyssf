@@ -1,6 +1,6 @@
-# Runs the receiver conformance tests of easyssf-tests-conformance against the OpenID conformance
+# Runs the receiver conformance tests of easyssf-receiver-spring-boot-conformance-tests against the OpenID conformance
 # suite, which Testcontainers starts on the runner. One job per test plan, each with its own suite.
-# See easyssf-tests-conformance/README.md for the plans and the suite image.
+# See easyssf-receiver-spring-boot-conformance-tests/README.md for the plans and the suite image.
 name: Conformance
 
 on:
@@ -17,12 +17,12 @@ on:
         required: false
         default: ''
   # Later: nightly, once a suite release contains the SSF test fixes made since release-v5.3.1
-  # (see "Which suite" in easyssf-tests-conformance/README.md). Pin that release in
+  # (see "Which suite" in easyssf-receiver-spring-boot-conformance-tests/README.md). Pin that release in
   # ConformanceSettings and uncomment:
   # schedule:
   #   - cron: '17 2 * * *'   # 02:17 UTC, every night
 
-# The suite and nginx images are the ones easyssf-tests-conformance's ConformanceSettings names,
+# The suite and nginx images are the ones easyssf-receiver-spring-boot-conformance-tests's ConformanceSettings names,
 # the single place to change them; a manual run can name other images.
 
 permissions:
@@ -51,14 +51,14 @@ jobs:
           cache: maven
 
       - name: Build the modules the receiver under test needs
-        run: ./mvnw -B --no-transfer-progress -DskipTests -pl easyssf-tests-conformance -am install
+        run: ./mvnw -B --no-transfer-progress -DskipTests -pl easyssf-receiver-spring-boot-conformance-tests -am install
 
       - name: Run the ${{ matrix.plan }} plan
         env:
           SUITE_IMAGE: ${{ inputs.suite-image }}
           NGINX_IMAGE: ${{ inputs.nginx-image }}
         run: >-
-          ./mvnw -B --no-transfer-progress -pl easyssf-tests-conformance -Pconformance verify
+          ./mvnw -B --no-transfer-progress -pl easyssf-receiver-spring-boot-conformance-tests -Pconformance verify
           -Dtest=${{ matrix.plan }}
           ${SUITE_IMAGE:+-Dcts.suite.image="$SUITE_IMAGE"}
           ${NGINX_IMAGE:+-Dcts.suite.nginx-image="$NGINX_IMAGE"}
@@ -68,6 +68,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: conformance-${{ matrix.plan }}
-          path: easyssf-tests-conformance/target/surefire-reports/
+          path: easyssf-receiver-spring-boot-conformance-tests/target/surefire-reports/
           if-no-files-found: ignore
           retention-days: 14

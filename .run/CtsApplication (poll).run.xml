@@ -3,9 +3,9 @@
     <envs>
       <env name="CTS_DELIVERY" value="poll" />
     </envs>
-    <module name="easyssf-tests-conformance" />
+    <module name="easyssf-receiver-spring-boot-conformance-tests" />
     <option name="SPRING_BOOT_MAIN_CLASS" value="org.easyssf.conformance.receiver.CtsApplication" />
-    <option name="WORKING_DIRECTORY" value="file://$PROJECT_DIR$/easyssf-tests-conformance" />
+    <option name="WORKING_DIRECTORY" value="file://$PROJECT_DIR$/easyssf-receiver-spring-boot-conformance-tests" />
     <extension name="coverage">
       <pattern>
         <option name="PATTERN" value="org.easyssf.conformance.receiver.*" />

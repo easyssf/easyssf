@@ -49,10 +49,11 @@
         <module>easyssf-test</module>
         <module>easyssf-receiver</module>
         <module>easyssf-receiver-jdbc</module>
+        <module>easyssf-test-conformance</module>
         <module>easyssf-receiver-spring-boot-autoconfigure</module>
         <module>easyssf-receiver-spring-boot-starter</module>
         <module>easyssf-receiver-spring-boot-examples</module>
-        <module>easyssf-tests-conformance</module>
+        <module>easyssf-receiver-spring-boot-conformance-tests</module>
     </modules>
 
     <properties>
@@ -105,6 +106,11 @@
             <dependency>
                 <groupId>org.easyssf</groupId>
                 <artifactId>easyssf-receiver-jdbc</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.easyssf</groupId>
+                <artifactId>easyssf-test-conformance</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

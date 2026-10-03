@@ -47,7 +47,8 @@ PUSH and POLL delivery.
 | `easyssf-receiver-spring-boot-starter` | The receiver for Spring Boot 4.1 (Spring Security 7.1, servlet stack): configuration properties, auto-configuration, push endpoint, resource server and OIDC client integration. | `easyssf-receiver`, Spring Boot |
 | `easyssf-test` | Test support: a transmitter that signs and delivers SETs, for the tests of your receiver, see [Testing your receiver](#testing-your-receiver). | `easyssf-core`, Nimbus JOSE + JWT |
 | [`easyssf-receiver-spring-boot-examples`](easyssf-receiver-spring-boot-examples) | Example resource server and OIDC client with a Keycloak setup. | |
-| [`easyssf-tests-conformance`](easyssf-tests-conformance) | Conformance tests against the OpenID conformance suite (started with Testcontainers): the receiver under test and JUnit tests that run the suite's SSF receiver test plans against it. | |
+| `easyssf-test-conformance` | Runs the OpenID conformance suite's SSF receiver test plans against a receiver under test, in any framework: the suite started with Testcontainers, the scenarios the receiver plays, and the plan tests a framework's test class extends. | `easyssf-receiver`, Testcontainers, JUnit |
+| [`easyssf-receiver-spring-boot-conformance-tests`](easyssf-receiver-spring-boot-conformance-tests) | The Spring Boot receiver under test and the four plan tests for it. | |
 
 Most of this document describes the Spring Boot starter. For other environments see
 [Using the receiver without Spring Boot](#using-the-receiver-without-spring-boot).
@@ -644,9 +645,9 @@ The tests against the OpenID conformance suite are not part of the normal build;
 and take a few minutes per plan:
 
 ```sh
-./mvnw -pl easyssf-tests-conformance -Pconformance verify
+./mvnw -pl easyssf-receiver-spring-boot-conformance-tests -Pconformance verify
 ```
 
-See [`easyssf-tests-conformance`](easyssf-tests-conformance) for the details, the test plans and how to run
+See [`easyssf-receiver-spring-boot-conformance-tests`](easyssf-receiver-spring-boot-conformance-tests) for the details, the test plans and how to run
 them against a newer suite than the released one. The CI builds are described in
 [`CONTRIBUTING.md`](CONTRIBUTING.md).
