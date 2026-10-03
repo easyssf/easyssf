@@ -106,7 +106,14 @@ jobs:
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
       - name: Publish snapshots
-        run: ./mvnw -B --no-transfer-progress -Prelease -DskipTests deploy
+        # only a snapshot version: on release day main carries the release version for one
+        # commit, and that one is published by release.yml from the tag
+        run: |
+          version=$(./mvnw -q -N --no-transfer-progress org.apache.maven.plugins:maven-help-plugin:3.5.1:evaluate -Dexpression=project.version -DforceStdout)
+          case "$version" in
+            *-SNAPSHOT) ./mvnw -B --no-transfer-progress -Prelease -DskipTests deploy ;;
+            *) echo "version $version is a release, nothing to publish from main" ;;
+          esac
         env:
           CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
           CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
