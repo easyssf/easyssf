@@ -58,7 +58,21 @@ jobs:
           done
           ls sbom
 
+      - name: Take the release notes from the changelog
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # the section of this version, without its heading, up to the next version heading
+          awk -v v="$version" '
+            /^## \[/ { in_section = ($0 ~ "^## \\[" v "\\]") ; next }
+            in_section && !/^\[/ { print }
+          ' CHANGELOG.md | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' > notes.md
+          if [ ! -s notes.md ]; then
+            echo "::error::CHANGELOG.md has no section for $version"
+            exit 1
+          fi
+          cat notes.md
+
       - name: Create the GitHub release
-        run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "${GITHUB_REF_NAME#v}" sbom/*
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --notes-file notes.md --title "${GITHUB_REF_NAME#v}" sbom/*
         env:
           GH_TOKEN: ${{ github.token }}

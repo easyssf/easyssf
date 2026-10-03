@@ -79,7 +79,9 @@ To release version `X.Y.Z` from `main`:
 
 1. Set the version in every POM and in the README and website snippets, and update
    `project.build.outputTimestamp` in the root POM to the release date:
-   `./mvnw versions:set -DnewVersion=X.Y.Z -DgenerateBackupPoms=false`.
+   `./mvnw versions:set -DnewVersion=X.Y.Z -DgenerateBackupPoms=false`. Turn the `Unreleased`
+   section of `CHANGELOG.md` into the section of `X.Y.Z` with the date; the workflow publishes
+   that section as the release notes and fails without it.
 2. Commit, tag `vX.Y.Z` and push the tag: `git tag -s vX.Y.Z -m "X.Y.Z" && git push origin vX.Y.Z`.
    The workflow checks that the tag matches the POM version, runs the tests, signs, publishes, and
    creates the GitHub release with generated notes and the SBOMs attached. The artifacts are on

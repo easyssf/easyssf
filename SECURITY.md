@@ -37,7 +37,7 @@ with the classifier `cyclonedx`.
 
 ## Supported versions
 
-easyssf is experimental and has no releases yet. Until 1.0, only the latest release receives
+easyssf is pre-1.0 and its API may still change. Until 1.0, only the latest release receives
 fixes; earlier releases are not patched.
 
 ## What is in scope

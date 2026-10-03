@@ -76,21 +76,13 @@ Most of this document describes the Spring Boot starter. For other environments 
 <dependency>
     <groupId>org.easyssf</groupId>
     <artifactId>easyssf-receiver-spring-boot-starter</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 ```
 
-There is no release yet. The snapshots of `main` are on the Maven Central snapshot repository,
-which a build has to enable:
-
-```xml
-<repository>
-    <id>central-snapshots</id>
-    <url>https://central.sonatype.com/repository/maven-snapshots/</url>
-    <releases><enabled>false</enabled></releases>
-    <snapshots><enabled>true</enabled></snapshots>
-</repository>
-```
+The releases are on Maven Central. Snapshots of `main` are on the
+[Central snapshot repository](https://central.sonatype.com/repository/maven-snapshots/org/easyssf/),
+which a build has to enable with `<snapshots><enabled>true</enabled></snapshots>`.
 
 ```yaml
 easyssf:
@@ -566,7 +558,7 @@ Spring Boot modules are automatic modules.
 <dependency>
     <groupId>org.easyssf</groupId>
     <artifactId>easyssf-receiver</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 ```
 
@@ -623,7 +615,7 @@ stream management and poll endpoints. The tests of easyssf itself use it.
 <dependency>
     <groupId>org.easyssf</groupId>
     <artifactId>easyssf-test</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
     <scope>test</scope>
 </dependency>
 ```
