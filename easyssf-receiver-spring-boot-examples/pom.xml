@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.easyssf</groupId>
         <artifactId>easyssf-parent</artifactId>
-        <version>0.0.1-SNAPSHOT</version>
+        <version>0.1.0-SNAPSHOT</version>
     </parent>
     <artifactId>easyssf-receiver-spring-boot-examples</artifactId>
     <name>easyssf-receiver-spring-boot-examples</name>

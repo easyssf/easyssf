@@ -76,7 +76,7 @@ Most of this document describes the Spring Boot starter. For other environments 
 <dependency>
     <groupId>org.easyssf</groupId>
     <artifactId>easyssf-receiver-spring-boot-starter</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>0.1.0-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -542,7 +542,7 @@ your framework:
 <dependency>
     <groupId>org.easyssf</groupId>
     <artifactId>easyssf-receiver</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>0.1.0-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -599,7 +599,7 @@ stream management and poll endpoints. The tests of easyssf itself use it.
 <dependency>
     <groupId>org.easyssf</groupId>
     <artifactId>easyssf-test</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>0.1.0-SNAPSHOT</version>
     <scope>test</scope>
 </dependency>
 ```

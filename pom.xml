@@ -6,7 +6,7 @@
 
     <groupId>org.easyssf</groupId>
     <artifactId>easyssf-parent</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>0.1.0-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>easyssf</name>
     <description>Building blocks for the OpenID Shared Signals Framework (SSF)</description>
