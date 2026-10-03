@@ -17,6 +17,7 @@ Spring Boot application into an SSF receiver. Inspired by the Quarkus extension
 | `easyssf-core` | The data structures of SSF shared by receivers and (later) transmitters: SETs, subjects, event types, stream configuration, transmitter metadata. | nothing |
 | `easyssf-receiver` | The receiver, independent of any framework: SET verification, de-duplication, event handlers, push handling, polling, stream management, token revocation and session termination logic. | `easyssf-core`, Nimbus JOSE + JWT, SLF4J |
 | `easyssf-receiver-spring-boot-starter` | The receiver for Spring Boot 4.1 (Spring Security 7.1, servlet stack): configuration properties, auto-configuration, push endpoint, resource server and OIDC client integration. | `easyssf-receiver`, Spring Boot |
+| `easyssf-test` | Test support: a transmitter that signs and delivers SETs, for the tests of your receiver, see [Testing your receiver](#testing-your-receiver). | `easyssf-core`, Nimbus JOSE + JWT |
 | [`easyssf-receiver-spring-boot-examples`](easyssf-receiver-spring-boot-examples) | Example resource server and OIDC client with a Keycloak setup. | |
 | [`easyssf-tests-conformance`](easyssf-tests-conformance) | Conformance tests against the OpenID conformance suite (started with Testcontainers): the receiver under test and JUnit tests that run the suite's SSF receiver test plans against it. | |
 
@@ -462,6 +463,44 @@ Ready-made pieces for the common reactions:
   for metrics.
 
 The Spring Boot starter is such an integration, see `easyssf-receiver-spring-boot-autoconfigure`.
+
+## Testing your receiver
+
+`easyssf-test` contains `TestTransmitter`, a transmitter on a loopback port of the JVM that signs SETs,
+serves its metadata and JWK Set, hands out access tokens for its client credentials and emulates the
+stream management and poll endpoints. The tests of easyssf itself use it.
+
+```xml
+<dependency>
+    <groupId>org.easyssf</groupId>
+    <artifactId>easyssf-test</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <scope>test</scope>
+</dependency>
+```
+
+```java
+static final TestTransmitter transmitter = new TestTransmitter();
+
+@DynamicPropertySource
+static void transmitter(DynamicPropertyRegistry registry) {
+    registry.add("easyssf.receiver.transmitter-issuer", transmitter::issuer);
+}
+
+@Test
+void revokedSessionIsRejected() {
+    JWTClaimsSet set = transmitter
+        .setClaims("CaepSessionRevoked", complex(issSub(transmitter.issuer(), "alice"), opaque("session-1")))
+        .audience("https://my-app.example")
+        .build();
+    String encodedSet = transmitter.signSet(set);
+    // POST encodedSet to /ssf/push, or transmitter.queueSet(encodedSet) for a polling receiver
+}
+```
+
+`transmitter.setAvailable(false)` simulates an outage, `transmitter.acknowledgedSets()` and
+`transmitter.reportedErrors()` show what a polling receiver acknowledged, `transmitter.streams()` the
+streams a receiver registered. The subject helpers are the static methods of `SsfSubjectIdentifiers`.
 
 ## Build
 

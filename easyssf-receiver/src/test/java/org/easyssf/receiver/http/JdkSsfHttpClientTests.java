@@ -2,7 +2,7 @@ package org.easyssf.receiver.http;
 
 import java.net.URI;
 
-import org.easyssf.receiver.TestTransmitter;
+import org.easyssf.test.TestTransmitter;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 

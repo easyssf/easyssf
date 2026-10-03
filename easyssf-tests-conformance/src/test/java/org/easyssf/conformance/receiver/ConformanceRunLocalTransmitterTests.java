@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.easyssf.core.event.SsfSubjectIdentifiers;
-import org.easyssf.receiver.TestTransmitter;
+import org.easyssf.test.TestTransmitter;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

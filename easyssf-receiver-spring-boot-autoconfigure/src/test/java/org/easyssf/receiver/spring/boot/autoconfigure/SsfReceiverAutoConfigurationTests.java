@@ -4,7 +4,6 @@ import java.net.URI;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-import org.easyssf.receiver.TestTransmitter;
 import org.easyssf.receiver.http.JdkSsfHttpClient;
 import org.easyssf.receiver.http.SsfHttpClient;
 import org.easyssf.receiver.http.SsfHttpRequest;
@@ -29,6 +28,7 @@ import org.easyssf.receiver.spring.boot.web.SsfPushEndpoint;
 import org.easyssf.receiver.stream.SsfReceiverStream;
 import org.easyssf.receiver.stream.SsfStreamClient;
 import org.easyssf.receiver.stream.SsfStreamRegistrar;
+import org.easyssf.test.TestTransmitter;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.context.properties.source.InvalidConfigurationPropertyValueException;

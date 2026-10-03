@@ -13,6 +13,7 @@
 
     <modules>
         <module>easyssf-core</module>
+        <module>easyssf-test</module>
         <module>easyssf-receiver</module>
         <module>easyssf-receiver-spring-boot-autoconfigure</module>
         <module>easyssf-receiver-spring-boot-starter</module>
@@ -56,9 +57,8 @@
             </dependency>
             <dependency>
                 <groupId>org.easyssf</groupId>
-                <artifactId>easyssf-receiver</artifactId>
+                <artifactId>easyssf-test</artifactId>
                 <version>${project.version}</version>
-                <type>test-jar</type>
             </dependency>
             <dependency>
                 <groupId>org.easyssf</groupId>

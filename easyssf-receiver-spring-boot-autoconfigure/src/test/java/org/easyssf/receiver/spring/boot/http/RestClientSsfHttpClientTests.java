@@ -5,12 +5,12 @@ import java.net.URI;
 import java.util.List;
 
 import org.easyssf.core.stream.SsfStreamConfiguration;
-import org.easyssf.receiver.TestTransmitter;
 import org.easyssf.receiver.http.SsfHttpClient;
 import org.easyssf.receiver.http.SsfHttpRequest;
 import org.easyssf.receiver.http.SsfHttpResponse;
 import org.easyssf.receiver.stream.SsfStreamClient;
 import org.easyssf.receiver.transmitter.SsfTransmitterMetadataResolver;
+import org.easyssf.test.TestTransmitter;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

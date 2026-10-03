@@ -5,8 +5,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 
-import org.easyssf.receiver.TestTransmitter;
-import org.easyssf.receiver.TestTransmitter.MetadataLocation;
+import org.easyssf.test.TestTransmitter;
+import org.easyssf.test.TestTransmitter.MetadataLocation;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;

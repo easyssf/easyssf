@@ -4,7 +4,6 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.easyssf.receiver.TestTransmitter;
 import org.easyssf.receiver.event.SsfEventHandler;
 import org.easyssf.receiver.http.JdkSsfHttpClient;
 import org.easyssf.receiver.http.SsfHttpClient;
@@ -14,6 +13,7 @@ import org.easyssf.receiver.set.NimbusSsfSetVerifier;
 import org.easyssf.receiver.set.SsfSetProcessor;
 import org.easyssf.receiver.transmitter.ClientCredentialsSsfTransmitterTokenProvider;
 import org.easyssf.receiver.transmitter.SsfTransmitterTokenProvider;
+import org.easyssf.test.TestTransmitter;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.easyssf</groupId>
+        <artifactId>easyssf-parent</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>easyssf-test</artifactId>
+    <name>easyssf-test</name>
+    <description>Test support for Shared Signals Framework receivers: a transmitter that signs and delivers SETs</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.easyssf</groupId>
+            <artifactId>easyssf-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.nimbusds</groupId>
+            <artifactId>nimbus-jose-jwt</artifactId>
+        </dependency>
+    </dependencies>
+
+</project>

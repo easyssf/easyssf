@@ -1,4 +1,4 @@
-package org.easyssf.receiver;
+package org.easyssf.test;
 
 import java.io.IOException;
 import java.net.InetAddress;

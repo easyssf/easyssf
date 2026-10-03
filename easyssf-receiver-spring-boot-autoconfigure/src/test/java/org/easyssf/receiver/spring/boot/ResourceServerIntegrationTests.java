@@ -10,13 +10,13 @@ import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.easyssf.receiver.TestTransmitter;
 import org.easyssf.receiver.event.SsfEventContext;
 import org.easyssf.receiver.event.SsfEventHandler;
 import org.easyssf.receiver.http.SsfHttpClient;
 import org.easyssf.receiver.revocation.SsfTokenRevocationStore;
 import org.easyssf.receiver.spring.boot.http.RestClientSsfHttpClient;
 import org.easyssf.receiver.spring.boot.jdbc.JdbcSsfTokenRevocationStore;
+import org.easyssf.test.TestTransmitter;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

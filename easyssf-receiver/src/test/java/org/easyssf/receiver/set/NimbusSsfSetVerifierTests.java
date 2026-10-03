@@ -7,9 +7,9 @@ import java.util.Set;
 
 import org.easyssf.core.event.SsfEventToken;
 import org.easyssf.core.event.SsfEventTypes;
-import org.easyssf.receiver.TestTransmitter;
 import org.easyssf.receiver.http.JdkSsfHttpClient;
 import org.easyssf.receiver.transmitter.SsfTransmitterUnavailableException;
+import org.easyssf.test.TestTransmitter;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

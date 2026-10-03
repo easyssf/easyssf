@@ -36,8 +36,7 @@
         </dependency>
         <dependency>
             <groupId>org.easyssf</groupId>
-            <artifactId>easyssf-receiver</artifactId>
-            <type>test-jar</type>
+            <artifactId>easyssf-test</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

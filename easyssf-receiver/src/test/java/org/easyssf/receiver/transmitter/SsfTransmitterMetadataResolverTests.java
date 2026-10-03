@@ -3,9 +3,9 @@ package org.easyssf.receiver.transmitter;
 import java.net.URI;
 
 import org.easyssf.core.metadata.SsfTransmitterMetadata;
-import org.easyssf.receiver.TestTransmitter;
-import org.easyssf.receiver.TestTransmitter.MetadataLocation;
 import org.easyssf.receiver.http.JdkSsfHttpClient;
+import org.easyssf.test.TestTransmitter;
+import org.easyssf.test.TestTransmitter.MetadataLocation;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;

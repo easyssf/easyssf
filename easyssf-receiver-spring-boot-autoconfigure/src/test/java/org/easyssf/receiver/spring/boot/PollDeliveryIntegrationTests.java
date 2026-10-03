@@ -11,10 +11,10 @@ import java.util.Map;
 
 import org.easyssf.core.SsfDeliveryMethod;
 import org.easyssf.core.event.SsfEventTypes;
-import org.easyssf.receiver.TestTransmitter;
 import org.easyssf.receiver.poll.SsfPoller;
 import org.easyssf.receiver.spring.boot.web.SsfPushEndpoint;
 import org.easyssf.receiver.stream.SsfReceiverStream;
+import org.easyssf.test.TestTransmitter;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
