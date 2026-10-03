@@ -45,6 +45,35 @@ public class SsfStreamRegistrar {
 
     private volatile Thread thread;
 
+    private volatile State state = State.NOT_STARTED;
+
+    private volatile String lastError;
+
+    /**
+     * Where the registration stands.
+     */
+    public enum State {
+
+        /** {@link SsfStreamRegistrar#start()} was not called yet. */
+        NOT_STARTED,
+
+        /**
+         * The stream is being looked up or registered, with retries while the transmitter
+         * cannot be reached.
+         */
+        REGISTERING,
+
+        /** The stream is known and matches what the receiver wants. */
+        REGISTERED,
+
+        /**
+         * The stream cannot be used, see {@link SsfStreamRegistrar#getLastError()}. Not
+         * retried.
+         */
+        FAILED
+
+    }
+
     /**
      * Looks up the stream with the given identifier.
      */
@@ -94,7 +123,20 @@ public class SsfStreamRegistrar {
      * Starts looking up or registering the stream in the background.
      */
     public void start() {
+        this.state = State.REGISTERING;
         this.thread = Thread.ofVirtual().name("ssf-stream-registrar").start(this::registerWithRetries);
+    }
+
+    public State getState() {
+        return this.state;
+    }
+
+    /**
+     * @return why the last attempt to look up or register the stream failed, {@code null}
+     * if it succeeded or none was made yet
+     */
+    public String getLastError() {
+        return this.lastError;
     }
 
     /**
@@ -133,10 +175,13 @@ public class SsfStreamRegistrar {
             catch (SsfStreamIssuerMismatchException ex) {
                 // trying again would only create another stream that must not be used
                 logger.error("Not using the SSF stream: " + ex.getMessage());
+                this.lastError = ex.getMessage();
+                this.state = State.FAILED;
                 deleteQuietly(ex.getStream().streamId());
                 return;
             }
             catch (RuntimeException ex) {
+                this.lastError = ex.getMessage();
                 if (this.thread == null) {
                     return;
                 }
@@ -201,6 +246,8 @@ public class SsfStreamRegistrar {
                 + Objects.toString(stream.deliveryEndpointUrl(), "") + ", events "
                 + stream.eventsDelivered().stream().map(SsfEventTypes::aliasOf).toList() + ", audience "
                 + stream.audience() + ")");
+        this.lastError = null;
+        this.state = State.REGISTERED;
         return stream;
     }
 

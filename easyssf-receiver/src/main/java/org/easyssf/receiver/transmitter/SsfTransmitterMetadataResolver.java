@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import org.easyssf.core.metadata.SsfTransmitterMetadata;
@@ -55,6 +56,13 @@ public class SsfTransmitterMetadataResolver {
      */
     public List<URI> getMetadataUris() {
         return this.metadataUris;
+    }
+
+    /**
+     * @return the metadata if it was retrieved already, without retrieving it
+     */
+    public Optional<SsfTransmitterMetadata> getResolvedMetadata() {
+        return Optional.ofNullable(this.metadata);
     }
 
     /**

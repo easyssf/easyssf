@@ -64,7 +64,13 @@ public class SsfPoller {
 
     private int maxEvents = 100;
 
-    private Instant pausedUntil = Instant.MIN;
+    private volatile Instant pausedUntil = Instant.MIN;
+
+    private volatile Instant lastPollAt;
+
+    private volatile Instant lastSuccessfulPollAt;
+
+    private volatile String lastPollError;
 
     private volatile ScheduledExecutorService scheduler;
 
@@ -136,6 +142,35 @@ public class SsfPoller {
         return this.scheduler != null;
     }
 
+    /**
+     * @return when the transmitter was last polled, {@code null} if it was not polled yet
+     */
+    public Instant getLastPollAt() {
+        return this.lastPollAt;
+    }
+
+    /**
+     * @return when the transmitter was last polled successfully, {@code null} if never
+     */
+    public Instant getLastSuccessfulPollAt() {
+        return this.lastSuccessfulPollAt;
+    }
+
+    /**
+     * @return why the last poll failed, {@code null} if it succeeded or none was made yet
+     */
+    public String getLastPollError() {
+        return this.lastPollError;
+    }
+
+    /**
+     * @return until when the transmitter asked not to be polled, in the past if it did
+     * not
+     */
+    public Instant getPausedUntil() {
+        return this.pausedUntil;
+    }
+
     private void pollQuietly() {
         try {
             pollNow();
@@ -162,22 +197,31 @@ public class SsfPoller {
             logger.debug("Not polling, the SSF transmitter asked to wait until " + this.pausedUntil);
             return 0;
         }
-        int fetched = 0;
-        boolean moreAvailable = true;
-        for (int request = 0; moreAvailable && request < MAX_REQUESTS_PER_POLL; request++) {
-            Map<String, Object> response = poll(endpoint, this.maxEvents);
-            Map<String, Object> sets = sets(response);
-            sets.forEach(this::process);
-            fetched += sets.size();
-            moreAvailable = Boolean.TRUE.equals(response.get("moreAvailable")) && !sets.isEmpty();
+        this.lastPollAt = Instant.now();
+        try {
+            int fetched = 0;
+            boolean moreAvailable = true;
+            for (int request = 0; moreAvailable && request < MAX_REQUESTS_PER_POLL; request++) {
+                Map<String, Object> response = poll(endpoint, this.maxEvents);
+                Map<String, Object> sets = sets(response);
+                sets.forEach(this::process);
+                fetched += sets.size();
+                moreAvailable = Boolean.TRUE.equals(response.get("moreAvailable")) && !sets.isEmpty();
+            }
+            if (!this.pendingAcks.isEmpty() || !this.pendingErrors.isEmpty()) {
+                // acknowledge right away instead of with the next poll
+                Map<String, Object> sets = sets(poll(endpoint, 0));
+                sets.forEach(this::process);
+                fetched += sets.size();
+            }
+            this.lastSuccessfulPollAt = Instant.now();
+            this.lastPollError = null;
+            return fetched;
         }
-        if (!this.pendingAcks.isEmpty() || !this.pendingErrors.isEmpty()) {
-            // acknowledge right away instead of with the next poll
-            Map<String, Object> sets = sets(poll(endpoint, 0));
-            sets.forEach(this::process);
-            fetched += sets.size();
+        catch (RuntimeException ex) {
+            this.lastPollError = ex.getMessage();
+            throw ex;
         }
-        return fetched;
     }
 
     private void process(String jti, Object encodedSet) {
