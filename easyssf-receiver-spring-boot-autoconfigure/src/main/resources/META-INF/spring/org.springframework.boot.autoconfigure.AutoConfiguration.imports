@@ -1,5 +1,6 @@
 org.easyssf.receiver.spring.boot.autoconfigure.SsfReceiverAutoConfiguration
 org.easyssf.receiver.spring.boot.autoconfigure.SsfReceiverMetricsAutoConfiguration
+org.easyssf.receiver.spring.boot.autoconfigure.SsfReceiverHealthAutoConfiguration
 org.easyssf.receiver.spring.boot.autoconfigure.SsfReceiverJdbcAutoConfiguration
 org.easyssf.receiver.spring.boot.autoconfigure.SsfReceiverRestClientAutoConfiguration
 org.easyssf.receiver.spring.boot.autoconfigure.SsfReceiverPushAutoConfiguration

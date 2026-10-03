@@ -329,6 +329,21 @@ If the application has a Micrometer `MeterRegistry` (for example with
 
 Switch it off with `easyssf.receiver.metrics.enabled=false`, or provide your own `SsfReceiverMetrics` bean.
 
+## Health
+
+With Spring Boot Actuator the receiver contributes the health indicator `easyssf`
+(`/actuator/health/easyssf`), from what it already knows; it never calls the transmitter for it:
+
+| Status | When |
+|---|---|
+| `UP` | The transmitter was reached: its metadata was retrieved (PUSH) or the last poll succeeded (POLL), and the stream, if it is looked up or managed, is registered. |
+| `DOWN` | The last poll failed, or the stream cannot be used (it was created with another issuer). |
+| `UNKNOWN` | No contact with the transmitter yet. The application starts without it. |
+
+The details name the transmitter, the delivery method, whether the metadata was retrieved, the stream and
+its registration state, and for POLL the last poll, the last successful poll and the error of the last
+poll. Switch it off with `management.health.easyssf.enabled=false`.
+
 ## Configuration
 
 | Property | Default | |
