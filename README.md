@@ -512,8 +512,10 @@ Tested with the SSF transmitter of Keycloak 26.8 (`--features=ssf`), see the [ex
 - Stream management and polling need an access token of the service account of that client with the
   scopes `ssf.read` and `ssf.manage` (optional client scopes of the client). Keycloak allows one
   stream per receiver.
-- A receiver only gets events of all users if its client has the attribute
-  `ssf.defaultSubjects=ALL`.
+- The client attribute `ssf.defaultSubjects` decides which users a stream covers by default: `ALL` for
+  every user, `NONE` for none. With `NONE` the receiver is still notified about a user once the
+  subject was added to the stream, with `SsfStreamClient.addSubject(...)` or in Keycloak's
+  administration console.
 - When an admin signs a user out of all sessions, Keycloak sends a `session-revoked` event whose
   subject has a `session` member with the identifier `ALL`. The starter treats this like a subject
   that names only the user (`SsfSubject.sessionId()` is `null`).
