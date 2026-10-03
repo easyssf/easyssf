@@ -62,6 +62,17 @@ class SsfTransmittersTests {
                 .isInstanceOf(SsfSetVerificationException.class)
                 .extracting("errorCode")
                 .isEqualTo(SsfSetVerificationException.INVALID_REQUEST);
+            // a SET without an issuer is not a SET (RFC 8417 requires iss):
+            // invalid_request,
+            // not invalid_issuer, which is for an issuer the receiver does not know
+            String withoutIssuer = keycloak.signSet(keycloak.setClaims("CaepSessionRevoked", opaque("session-1"))
+                .issuer(null)
+                .audience(TestTransmitter.AUDIENCE)
+                .build());
+            assertThatThrownBy(() -> transmitters.verifier().verify(withoutIssuer))
+                .isInstanceOf(SsfSetVerificationException.class)
+                .extracting("errorCode")
+                .isEqualTo(SsfSetVerificationException.INVALID_REQUEST);
         }
         finally {
             stranger.close();
