@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.easyssf.core.event.SsfEventTypes;
 import org.easyssf.core.event.SsfSubject;
+import org.easyssf.core.event.SsfSubjectIdentifier;
 import org.easyssf.core.support.SsfAssert;
 import org.easyssf.receiver.event.SsfEventContext;
 import org.easyssf.receiver.event.SsfEventHandler;
@@ -75,10 +76,11 @@ public class SsfSessionTerminationEventHandler implements SsfEventHandler {
         if (subject.sessionId() != null) {
             return "session " + subject.sessionId();
         }
-        if (subject.subject() != null) {
-            return "subject " + subject.subject();
+        SsfSubjectIdentifier user = subject.userIdentifier();
+        if (user != null) {
+            return "user " + ((user.value() != null) ? user.value() : user.format());
         }
-        return (subject.email() != null) ? "user " + subject.email() : "session or subject " + subject.opaqueId();
+        return "session or subject " + subject.opaqueId();
     }
 
 }

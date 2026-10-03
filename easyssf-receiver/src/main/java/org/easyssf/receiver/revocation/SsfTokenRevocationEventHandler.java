@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.easyssf.core.event.SsfEventTypes;
 import org.easyssf.core.event.SsfSubject;
+import org.easyssf.core.event.SsfSubjectIdentifier;
 import org.easyssf.core.support.SsfAssert;
 import org.easyssf.receiver.event.SsfEventContext;
 import org.easyssf.receiver.event.SsfEventHandler;
@@ -52,24 +53,36 @@ public class SsfTokenRevocationEventHandler implements SsfEventHandler {
         SsfSubject subject = eventContext.subjectFor(eventType);
         Instant revokedAt = eventContext.eventTimestamp(eventType);
         String alias = SsfEventTypes.aliasOf(eventType);
+        String transmitter = eventContext.eventToken().iss();
         if (subject.sessionId() != null) {
-            this.revocationStore.revokeSession(subject.sessionId());
-            logger.info(alias + ": revoked access tokens of session " + subject.sessionId());
+            String issuer = issuerOf(subject.session(), transmitter);
+            this.revocationStore.revokeSession(issuer, subject.sessionId());
+            logger.info(alias + ": revoked access tokens of session " + subject.sessionId() + " at " + issuer);
         }
         else if (subject.subject() != null) {
-            this.revocationStore.revokeSubject(subject.subject(), revokedAt);
-            logger.info(alias + ": revoked access tokens of subject " + subject.subject());
+            String issuer = issuerOf(subject.userIdentifier(), transmitter);
+            this.revocationStore.revokeSubject(issuer, subject.subject(), revokedAt);
+            logger.info(alias + ": revoked access tokens of subject " + subject.subject() + " at " + issuer);
         }
         else if (subject.opaqueId() != null) {
             // an opaque identifier does not tell whether it names a session or a user
-            this.revocationStore.revokeSession(subject.opaqueId());
-            this.revocationStore.revokeSubject(subject.opaqueId(), revokedAt);
-            logger.info(alias + ": revoked access tokens of session or subject " + subject.opaqueId());
+            this.revocationStore.revokeSession(transmitter, subject.opaqueId());
+            this.revocationStore.revokeSubject(transmitter, subject.opaqueId(), revokedAt);
+            logger.info(alias + ": revoked access tokens of session or subject " + subject.opaqueId() + " at "
+                    + transmitter);
         }
         else {
             logger.warn(alias + " event of SET " + eventContext.eventToken().jti()
                     + " has no subject that identifies a session or user by sid or sub, no tokens were revoked");
         }
+    }
+
+    /**
+     * The issuer of the tokens an identifier refers to: the one of an {@code iss_sub}
+     * identifier, else the transmitter that sent the event.
+     */
+    private static String issuerOf(SsfSubjectIdentifier identifier, String transmitter) {
+        return (identifier != null && identifier.issuer() != null) ? identifier.issuer() : transmitter;
     }
 
 }

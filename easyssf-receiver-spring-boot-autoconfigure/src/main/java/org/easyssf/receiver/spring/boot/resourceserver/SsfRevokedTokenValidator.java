@@ -32,7 +32,9 @@ public class SsfRevokedTokenValidator implements OAuth2TokenValidator<Jwt> {
 
     @Override
     public OAuth2TokenValidatorResult validate(Jwt token) {
-        if (this.revocationStore.isRevoked(token.getClaimAsString("sid"), token.getSubject(), token.getIssuedAt())) {
+        String issuer = (token.getIssuer() != null) ? token.getIssuer().toString() : null;
+        if (this.revocationStore.isRevoked(issuer, token.getClaimAsString("sid"), token.getSubject(),
+                token.getIssuedAt())) {
             return OAuth2TokenValidatorResult.failure(REVOKED);
         }
         return OAuth2TokenValidatorResult.success();

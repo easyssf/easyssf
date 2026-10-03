@@ -1,6 +1,7 @@
 package org.easyssf.core.event;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -27,6 +28,59 @@ public final class SsfSubjectIdentifiers {
 
     public static Map<String, Object> opaque(String id) {
         return identifier("opaque", "id", id);
+    }
+
+    /**
+     * A subject identified by an {@code acct:} URI (RFC 7565).
+     */
+    public static Map<String, Object> account(String uri) {
+        return identifier("account", "uri", uri);
+    }
+
+    /**
+     * A subject identified by a telephone number in E.164 format.
+     */
+    public static Map<String, Object> phoneNumber(String phoneNumber) {
+        return identifier("phone_number", "phone_number", phoneNumber);
+    }
+
+    /**
+     * A subject identified by a decentralized identifier.
+     */
+    public static Map<String, Object> did(String url) {
+        return identifier("did", "url", url);
+    }
+
+    /**
+     * A subject identified by a URI.
+     */
+    public static Map<String, Object> uri(String uri) {
+        return identifier("uri", "uri", uri);
+    }
+
+    /**
+     * A subject with several identifiers that all name it.
+     */
+    public static Map<String, Object> aliases(List<Map<String, Object>> identifiers) {
+        Map<String, Object> identifier = new LinkedHashMap<>();
+        identifier.put("format", "aliases");
+        identifier.put("identifiers", List.copyOf(identifiers));
+        return identifier;
+    }
+
+    /**
+     * A complex subject with the given members ({@code user}, {@code session},
+     * {@code device}, {@code tenant}, ...), each a subject identifier.
+     */
+    public static Map<String, Object> complex(Map<String, Map<String, Object>> members) {
+        Map<String, Object> identifier = new LinkedHashMap<>();
+        identifier.put("format", "complex");
+        members.forEach((name, member) -> {
+            if (member != null) {
+                identifier.put(name, member);
+            }
+        });
+        return identifier;
     }
 
     /**

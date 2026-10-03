@@ -22,6 +22,8 @@ class SsfTokenRevocationTests {
 
     private static final Instant NOW = Instant.parse("2026-10-02T10:00:00Z");
 
+    private static final String ISSUER = "https://idp.example";
+
     private final MutableClock clock = new MutableClock(NOW);
 
     private final InMemorySsfTokenRevocationStore store = new InMemorySsfTokenRevocationStore(Duration.ofMinutes(10),
@@ -56,6 +58,23 @@ class SsfTokenRevocationTests {
     }
 
     @Test
+    void revocationsAreScopedToTheIssuer() {
+        this.handler.handle(sessionRevoked(complex(issSub("https://idp.example", "alice"), opaque("session-1"))));
+        this.handler.handle(sessionRevoked(issSub("https://idp.example", "bob")));
+        Token otherIssuer = new Token("https://other.example", "bob", "session-1", NOW.minusSeconds(60));
+        assertThat(isValid(otherIssuer)).isTrue();
+        assertThat(this.store.isRevoked("https://other.example", "session-1", null, null)).isFalse();
+        assertThat(this.store.isRevoked(null, "session-1", "bob", NOW)).isFalse();
+    }
+
+    @Test
+    void identifierOfAnotherIssuerIsRevokedAtThatIssuer() {
+        this.handler.handle(sessionRevoked(issSub("https://other.example", "alice")));
+        assertThat(this.store.getSubjectRevokedAt("https://other.example", "alice")).isEqualTo(NOW);
+        assertThat(this.store.getSubjectRevokedAt(ISSUER, "alice")).isNull();
+    }
+
+    @Test
     void ignoresOtherEventsAndSubjectsWithoutSessionOrSubject() {
         this.handler.handle(event(SsfEventTypes.CAEP_CREDENTIAL_CHANGE, issSub("https://idp.example", "alice")));
         this.handler.handle(sessionRevoked(email("alice@example.com")));
@@ -64,32 +83,32 @@ class SsfTokenRevocationTests {
 
     @Test
     void revocationsExpire() {
-        this.store.revokeSession("session-1");
-        this.store.revokeSubject("alice", NOW);
+        this.store.revokeSession(ISSUER, "session-1");
+        this.store.revokeSubject(ISSUER, "alice", NOW);
         this.clock.advance(Duration.ofMinutes(9));
-        assertThat(this.store.isSessionRevoked("session-1")).isTrue();
-        assertThat(this.store.getSubjectRevokedAt("alice")).isEqualTo(NOW);
+        assertThat(this.store.isSessionRevoked(ISSUER, "session-1")).isTrue();
+        assertThat(this.store.getSubjectRevokedAt(ISSUER, "alice")).isEqualTo(NOW);
         this.clock.advance(Duration.ofMinutes(2));
-        assertThat(this.store.isSessionRevoked("session-1")).isFalse();
-        assertThat(this.store.getSubjectRevokedAt("alice")).isNull();
+        assertThat(this.store.isSessionRevoked(ISSUER, "session-1")).isFalse();
+        assertThat(this.store.getSubjectRevokedAt(ISSUER, "alice")).isNull();
     }
 
     @Test
     void eventDeliveredLateDoesNotShortenMoreRecentRevocation() {
-        this.store.revokeSubject("alice", NOW);
-        this.store.revokeSubject("alice", NOW.minusSeconds(120));
-        assertThat(this.store.getSubjectRevokedAt("alice")).isEqualTo(NOW);
+        this.store.revokeSubject(ISSUER, "alice", NOW);
+        this.store.revokeSubject(ISSUER, "alice", NOW.minusSeconds(120));
+        assertThat(this.store.getSubjectRevokedAt(ISSUER, "alice")).isEqualTo(NOW);
     }
 
     private boolean isValid(Token token) {
-        return !this.store.isRevoked(token.sessionId(), token.subject(), token.issuedAt());
+        return !this.store.isRevoked(token.issuer(), token.sessionId(), token.subject(), token.issuedAt());
     }
 
     private static Token token(String subject, String sessionId, Instant issuedAt) {
-        return new Token(subject, sessionId, issuedAt);
+        return new Token(ISSUER, subject, sessionId, issuedAt);
     }
 
-    private record Token(String subject, String sessionId, Instant issuedAt) {
+    private record Token(String issuer, String subject, String sessionId, Instant issuedAt) {
     }
 
     private static SsfEventContext sessionRevoked(Map<String, Object> subjectId) {

@@ -65,10 +65,11 @@ public final class JdbcSsfSchema {
         return List.of("""
                 CREATE TABLE %s (
                     KIND VARCHAR(16) NOT NULL,
+                    ISSUER VARCHAR(255) NOT NULL,
                     ID VARCHAR(255) NOT NULL,
                     REVOKED_AT BIGINT NOT NULL,
                     EXPIRES_AT BIGINT NOT NULL,
-                    CONSTRAINT %s_PK PRIMARY KEY (KIND, ID)
+                    CONSTRAINT %s_PK PRIMARY KEY (KIND, ISSUER, ID)
                 )""".formatted(table, name), "CREATE INDEX %s_IX1 ON %s (EXPIRES_AT)".formatted(name, table));
     }
 

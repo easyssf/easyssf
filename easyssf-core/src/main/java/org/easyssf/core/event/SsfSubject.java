@@ -1,38 +1,59 @@
 package org.easyssf.core.event;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.easyssf.core.support.SsfCollections;
+
 /**
- * The identifiers of an SSF subject (RFC 9493 subject identifier), resolved from the
- * {@code sub_id} claim of a SET.
+ * The subject of a SET (its {@code sub_id} claim): a simple subject identifier (RFC
+ * 9493), or a complex subject whose members ({@code user}, {@code session},
+ * {@code device}, {@code tenant}, ...) are identifiers.
  *
  * <p>
- * Supported formats are {@code iss_sub}, {@code email}, {@code opaque} and
- * {@code complex} (with {@code user} and {@code session} members). Everything else is
- * still available through {@link #raw()}.
+ * {@link #userIdentifier()} and {@link #session()} are the two members the receiver acts
+ * on, and {@link #issuer()}, {@link #subject()}, {@link #sessionId()}, {@link #email()}
+ * and {@link #opaqueId()} are shortcuts to their most common values. Everything else is
+ * available through {@link #member(String)} and {@link #raw()}.
  *
  * <p>
  * Keycloak reports the revocation of all sessions of a user with a {@code session} member
  * whose identifier is {@value #ALL_SESSIONS}. Such a subject is resolved like one that
- * names only the user: its {@link #sessionId()} is {@code null}.
+ * names only the user: it has no {@link #session()}.
  *
  * @param raw the subject identifier as received, empty if the SET carried none
- * @param issuer issuer of the user ({@code iss_sub}), may be {@code null}
- * @param subject identifier of the user at the issuer, may be {@code null}
- * @param sessionId identifier of the session at the issuer, may be {@code null}
- * @param email email address of the user, may be {@code null}
- * @param opaqueId identifier of a simple {@code opaque} subject, which does not tell
- * whether it names a user or a session, may be {@code null}
+ * @param identifier the identifier of a simple subject, {@code null} for a complex
+ * subject or none
+ * @param members the members of a complex subject by name, empty for a simple subject
  */
-public record SsfSubject(Map<String, Object> raw, String issuer, String subject, String sessionId, String email,
-        String opaqueId) {
+public record SsfSubject(Map<String, Object> raw, SsfSubjectIdentifier identifier,
+        Map<String, SsfSubjectIdentifier> members) {
 
     /**
      * Session identifier Keycloak uses to refer to all sessions of a user.
      */
     public static final String ALL_SESSIONS = "ALL";
 
-    private static final SsfSubject EMPTY = new SsfSubject(Map.of(), null, null, null, null, null);
+    public static final String USER = "user";
+
+    public static final String SESSION = "session";
+
+    public static final String DEVICE = "device";
+
+    public static final String APPLICATION = "application";
+
+    public static final String TENANT = "tenant";
+
+    public static final String ORG_UNIT = "org_unit";
+
+    public static final String GROUP = "group";
+
+    private static final SsfSubject EMPTY = new SsfSubject(Map.of(), null, Map.of());
+
+    public SsfSubject {
+        raw = SsfCollections.copyOf((raw != null) ? raw : Map.of());
+        members = SsfCollections.copyOf((members != null) ? members : Map.of());
+    }
 
     public static SsfSubject empty() {
         return EMPTY;
@@ -46,68 +67,161 @@ public record SsfSubject(Map<String, Object> raw, String issuer, String subject,
         if (subjectId == null || subjectId.isEmpty()) {
             return EMPTY;
         }
-        String format = string(subjectId, "format");
-        Map<String, Object> user = map(subjectId, "user");
-        Map<String, Object> session = map(subjectId, "session");
+        String format = (subjectId.get("format") instanceof String value) ? value : null;
         // Early SSF drafts used complex subjects without a format member
-        boolean complex = "complex".equals(format) || (format == null && (user != null || session != null));
+        boolean complex = "complex".equals(format) || (format == null && hasMembers(subjectId));
         if (!complex) {
-            return simple(subjectId, subjectId);
+            return new SsfSubject(subjectId, SsfSubjectIdentifier.from(subjectId), Map.of());
         }
-        SsfSubject resolvedUser = (user != null) ? simple(subjectId, user) : EMPTY;
-        String userSubject = (resolvedUser.subject() != null) ? resolvedUser.subject() : resolvedUser.opaqueId();
-        String sessionId = (session != null) ? string(session, "id") : null;
-        if (ALL_SESSIONS.equals(sessionId) && (userSubject != null || resolvedUser.email() != null)) {
-            sessionId = null;
+        Map<String, SsfSubjectIdentifier> members = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : subjectId.entrySet()) {
+            if (entry.getValue() instanceof Map<?, ?> member) {
+                SsfSubjectIdentifier identifier = SsfSubjectIdentifier.from(asMap(member));
+                if (identifier != null) {
+                    members.put(entry.getKey(), identifier);
+                }
+            }
         }
-        return new SsfSubject(subjectId, resolvedUser.issuer(), userSubject, sessionId, resolvedUser.email(), null);
+        SsfSubjectIdentifier session = members.get(SESSION);
+        if (session != null && session.isOpaque() && ALL_SESSIONS.equals(session.value())
+                && members.containsKey(USER)) {
+            members.remove(SESSION);
+        }
+        return new SsfSubject(subjectId, null, members);
     }
 
-    private static SsfSubject simple(Map<String, Object> raw, Map<String, Object> identifier) {
-        String format = string(identifier, "format");
-        if (format == null) {
-            return new SsfSubject(raw, null, null, null, null, null);
-        }
-        return switch (format) {
-            case "iss_sub" ->
-                new SsfSubject(raw, string(identifier, "iss"), string(identifier, "sub"), null, null, null);
-            case "email" -> new SsfSubject(raw, null, null, null, string(identifier, "email"), null);
-            case "opaque" -> new SsfSubject(raw, null, null, null, null, string(identifier, "id"));
-            default -> new SsfSubject(raw, null, null, null, null, null);
-        };
+    private static boolean hasMembers(Map<String, Object> subjectId) {
+        return subjectId.values().stream().anyMatch(Map.class::isInstance);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> asMap(Map<?, ?> map) {
+        return (Map<String, Object>) map;
     }
 
     /**
-     * Whether no supported identifier could be resolved.
+     * Whether this is a complex subject.
+     */
+    public boolean isComplex() {
+        return !this.members.isEmpty();
+    }
+
+    /**
+     * @return the member of a complex subject with the given name, {@code null} if absent
+     */
+    public SsfSubjectIdentifier member(String name) {
+        return this.members.get(name);
+    }
+
+    public SsfSubjectIdentifier user() {
+        return member(USER);
+    }
+
+    public SsfSubjectIdentifier session() {
+        return member(SESSION);
+    }
+
+    public SsfSubjectIdentifier device() {
+        return member(DEVICE);
+    }
+
+    public SsfSubjectIdentifier application() {
+        return member(APPLICATION);
+    }
+
+    public SsfSubjectIdentifier tenant() {
+        return member(TENANT);
+    }
+
+    public SsfSubjectIdentifier orgUnit() {
+        return member(ORG_UNIT);
+    }
+
+    public SsfSubjectIdentifier group() {
+        return member(GROUP);
+    }
+
+    /**
+     * The identifier that names the user: the {@code user} member of a complex subject,
+     * or the identifier of a simple subject unless it is {@code opaque}, which may as
+     * well name a session (see {@link #opaqueId()}).
+     * @return the identifier, {@code null} if the subject does not name a user
+     */
+    public SsfSubjectIdentifier userIdentifier() {
+        if (this.identifier != null) {
+            return this.identifier.isOpaque() ? null : this.identifier;
+        }
+        return user();
+    }
+
+    /**
+     * @return the issuer of the user, from an {@code iss_sub} identifier, may be
+     * {@code null}
+     */
+    public String issuer() {
+        SsfSubjectIdentifier user = userIdentifier();
+        return (user != null) ? user.issuer() : null;
+    }
+
+    /**
+     * @return the identifier of the user at the issuer: {@code sub} of an {@code iss_sub}
+     * identifier, or the {@code id} of an {@code opaque} user of a complex subject, may
+     * be {@code null}
+     */
+    public String subject() {
+        SsfSubjectIdentifier user = userIdentifier();
+        return (user != null && (user.isIssSub() || user.isOpaque())) ? user.value() : null;
+    }
+
+    /**
+     * @return the identifier of the session, may be {@code null}
+     */
+    public String sessionId() {
+        SsfSubjectIdentifier session = session();
+        return (session != null) ? session.value() : null;
+    }
+
+    /**
+     * @return the email address of the user, from an {@code email} identifier, may be
+     * {@code null}
+     */
+    public String email() {
+        SsfSubjectIdentifier user = userIdentifier();
+        return (user != null && user.isEmail()) ? user.value() : null;
+    }
+
+    /**
+     * @return the identifier of a simple {@code opaque} subject, which does not tell
+     * whether it names a user or a session, may be {@code null}
+     */
+    public String opaqueId() {
+        return (this.identifier != null && this.identifier.isOpaque()) ? this.identifier.value() : null;
+    }
+
+    /**
+     * Whether the SET carried no subject identifier that could be resolved.
      */
     public boolean isEmpty() {
-        return this.subject == null && this.sessionId == null && this.email == null && this.opaqueId == null;
+        return this.identifier == null && this.members.isEmpty();
     }
 
     /**
      * Whether this subject identifies a user (as opposed to only a session).
      */
     public boolean hasUser() {
-        return this.subject != null || this.email != null || this.opaqueId != null;
+        return userIdentifier() != null;
     }
 
     /**
-     * Returns this subject without its session identifier, i.e. widened to the user.
+     * Returns this subject without its session, i.e. widened to the user.
      */
     public SsfSubject withoutSession() {
-        if (this.sessionId == null) {
+        if (session() == null) {
             return this;
         }
-        return new SsfSubject(this.raw, this.issuer, this.subject, null, this.email, this.opaqueId);
-    }
-
-    private static String string(Map<String, Object> map, String key) {
-        return (map.get(key) instanceof String value && !value.isBlank()) ? value : null;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> map(Map<String, Object> map, String key) {
-        return (map.get(key) instanceof Map<?, ?> value) ? (Map<String, Object>) value : null;
+        Map<String, SsfSubjectIdentifier> members = new LinkedHashMap<>(this.members);
+        members.remove(SESSION);
+        return new SsfSubject(this.raw, this.identifier, members);
     }
 
 }

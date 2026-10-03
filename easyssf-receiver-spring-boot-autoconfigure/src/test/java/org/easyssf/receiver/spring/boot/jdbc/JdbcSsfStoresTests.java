@@ -25,6 +25,8 @@ import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 
 class JdbcSsfStoresTests {
 
+    private static final String ISSUER = "https://idp.example";
+
     private static final Instant NOW = Instant.parse("2026-10-02T10:00:00Z");
 
     private static final String PREFIX = JdbcSsfSchema.DEFAULT_TABLE_PREFIX;
@@ -134,60 +136,64 @@ class JdbcSsfStoresTests {
     @Test
     void revokedSessionRevokesItsTokensWheneverTheyWereIssued() {
         JdbcSsfTokenRevocationStore store = revocationStore();
-        store.revokeSession("session-1");
-        assertThat(store.isSessionRevoked("session-1")).isTrue();
-        assertThat(store.isRevoked("session-1", "alice", NOW.plusSeconds(60))).isTrue();
-        assertThat(store.isRevoked("session-2", "alice", NOW.minusSeconds(60))).isFalse();
-        assertThat(store.isRevoked(null, null, NOW)).isFalse();
+        store.revokeSession(ISSUER, "session-1");
+        assertThat(store.isSessionRevoked(ISSUER, "session-1")).isTrue();
+        assertThat(store.isRevoked(ISSUER, "session-1", "alice", NOW.plusSeconds(60))).isTrue();
+        assertThat(store.isRevoked(ISSUER, "session-2", "alice", NOW.minusSeconds(60))).isFalse();
+        assertThat(store.isRevoked(ISSUER, null, null, NOW)).isFalse();
     }
 
     @Test
     void revokedSubjectRevokesTokensIssuedUpToTheRevocation() {
         JdbcSsfTokenRevocationStore store = revocationStore();
-        store.revokeSubject("alice", NOW);
-        assertThat(store.getSubjectRevokedAt("alice")).isEqualTo(NOW);
-        assertThat(store.isRevoked("session-1", "alice", NOW.minusSeconds(60))).isTrue();
-        assertThat(store.isRevoked("session-1", "alice", NOW)).isTrue();
-        assertThat(store.isRevoked("session-1", "alice", null)).isTrue();
-        assertThat(store.isRevoked("session-2", "alice", NOW.plusSeconds(1))).isFalse();
-        assertThat(store.isRevoked("session-3", "bob", NOW.minusSeconds(60))).isFalse();
+        store.revokeSubject(ISSUER, "alice", NOW);
+        assertThat(store.getSubjectRevokedAt(ISSUER, "alice")).isEqualTo(NOW);
+        assertThat(store.isRevoked(ISSUER, "session-1", "alice", NOW.minusSeconds(60))).isTrue();
+        assertThat(store.isRevoked(ISSUER, "session-1", "alice", NOW)).isTrue();
+        assertThat(store.isRevoked(ISSUER, "session-1", "alice", null)).isTrue();
+        assertThat(store.isRevoked(ISSUER, "session-2", "alice", NOW.plusSeconds(1))).isFalse();
+        assertThat(store.isRevoked(ISSUER, "session-3", "bob", NOW.minusSeconds(60))).isFalse();
         // a session and a subject may have the same identifier
-        assertThat(store.isSessionRevoked("alice")).isFalse();
+        assertThat(store.isSessionRevoked(ISSUER, "alice")).isFalse();
+        // revocations are scoped to the issuer
+        assertThat(store.getSubjectRevokedAt("https://other.example", "alice")).isNull();
+        assertThat(store.isRevoked("https://other.example", "session-1", "alice", NOW.minusSeconds(60))).isFalse();
+        assertThat(store.isRevoked(null, "session-1", "alice", NOW.minusSeconds(60))).isFalse();
     }
 
     @Test
     void revocationsAreSharedBetweenInstances() {
-        revocationStore().revokeSession("session-1");
-        revocationStore().revokeSubject("alice", NOW);
+        revocationStore().revokeSession(ISSUER, "session-1");
+        revocationStore().revokeSubject(ISSUER, "alice", NOW);
         JdbcSsfTokenRevocationStore other = revocationStore();
-        assertThat(other.isRevoked("session-1", "bob", NOW)).isTrue();
-        assertThat(other.isRevoked("session-2", "alice", NOW.minusSeconds(1))).isTrue();
+        assertThat(other.isRevoked(ISSUER, "session-1", "bob", NOW)).isTrue();
+        assertThat(other.isRevoked(ISSUER, "session-2", "alice", NOW.minusSeconds(1))).isTrue();
     }
 
     @Test
     void eventDeliveredLateDoesNotShortenMoreRecentRevocation() {
         JdbcSsfTokenRevocationStore store = revocationStore();
-        store.revokeSubject("alice", NOW);
-        store.revokeSubject("alice", NOW.minusSeconds(120));
-        assertThat(store.getSubjectRevokedAt("alice")).isEqualTo(NOW);
-        store.revokeSubject("alice", NOW.plusSeconds(30));
-        assertThat(store.getSubjectRevokedAt("alice")).isEqualTo(NOW.plusSeconds(30));
+        store.revokeSubject(ISSUER, "alice", NOW);
+        store.revokeSubject(ISSUER, "alice", NOW.minusSeconds(120));
+        assertThat(store.getSubjectRevokedAt(ISSUER, "alice")).isEqualTo(NOW);
+        store.revokeSubject(ISSUER, "alice", NOW.plusSeconds(30));
+        assertThat(store.getSubjectRevokedAt(ISSUER, "alice")).isEqualTo(NOW.plusSeconds(30));
         assertThat(this.jdbc.queryForObject("SELECT COUNT(*) FROM EASYSSF_REVOCATION", Integer.class)).isEqualTo(1);
     }
 
     @Test
     void revocationsExpireAndAreRemoved() {
         JdbcSsfTokenRevocationStore store = revocationStore();
-        store.revokeSession("session-1");
-        store.revokeSubject("alice", NOW);
+        store.revokeSession(ISSUER, "session-1");
+        store.revokeSubject(ISSUER, "alice", NOW);
         this.clock.advance(Duration.ofMinutes(9));
-        assertThat(store.isSessionRevoked("session-1")).isTrue();
-        assertThat(store.getSubjectRevokedAt("alice")).isEqualTo(NOW);
+        assertThat(store.isSessionRevoked(ISSUER, "session-1")).isTrue();
+        assertThat(store.getSubjectRevokedAt(ISSUER, "alice")).isEqualTo(NOW);
         this.clock.advance(Duration.ofMinutes(2));
-        assertThat(store.isSessionRevoked("session-1")).isFalse();
-        assertThat(store.getSubjectRevokedAt("alice")).isNull();
-        assertThat(store.isRevoked("session-1", "alice", NOW.minusSeconds(60))).isFalse();
-        store.revokeSession("session-2");
+        assertThat(store.isSessionRevoked(ISSUER, "session-1")).isFalse();
+        assertThat(store.getSubjectRevokedAt(ISSUER, "alice")).isNull();
+        assertThat(store.isRevoked(ISSUER, "session-1", "alice", NOW.minusSeconds(60))).isFalse();
+        store.revokeSession(ISSUER, "session-2");
         assertThat(this.jdbc.queryForList("SELECT ID FROM EASYSSF_REVOCATION", String.class))
             .containsExactly("session-2");
     }
@@ -207,9 +213,9 @@ class JdbcSsfStoresTests {
 
         // revocations for ten minutes
         JdbcSsfTokenRevocationStore revocationStore = revocationStore();
-        revocationStore.revokeSession("old-session");
+        revocationStore.revokeSession(ISSUER, "old-session");
         this.clock.advance(Duration.ofMinutes(5));
-        revocationStore.revokeSession("recent-session");
+        revocationStore.revokeSession(ISSUER, "recent-session");
         this.clock.advance(Duration.ofMinutes(5));
         assertThat(revocationStore.purgeExpired()).isEqualTo(1);
         assertThat(this.jdbc.queryForList("SELECT ID FROM EASYSSF_REVOCATION", String.class))
@@ -222,7 +228,7 @@ class JdbcSsfStoresTests {
         JdbcSsfJtiDedupStore dedupStore = dedupStore();
         JdbcSsfTokenRevocationStore revocationStore = revocationStore();
         dedupStore.seenBefore(set("old"));
-        revocationStore.revokeSession("old-session");
+        revocationStore.revokeSession(ISSUER, "old-session");
         this.clock.advance(Duration.ofDays(2));
 
         JdbcSsfStoreCleanup off = new JdbcSsfStoreCleanup(List.of(dedupStore, revocationStore), Duration.ZERO);

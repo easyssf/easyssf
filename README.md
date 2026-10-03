@@ -95,6 +95,10 @@ Things to know:
   (Redis, ...) provide a `SsfTokenRevocationStore` bean.
 - **`easyssf.receiver.resource-server.revocation-ttl`** (default `1h`) must be at least the maximum
   lifetime of your access tokens. Revocations are forgotten after that time.
+- **Issuers**: a revocation applies to the tokens of one issuer, the `iss` of the event's `iss_sub`
+  identifier, or the transmitter for identifiers without one (`opaque`, sessions). It is matched against
+  the `iss` claim of the access token, so the transmitter must be the issuer of the tokens, or name it in
+  its events.
 - Opaque tokens are not covered, introspection already asks the authorization server.
 
 ## Use case: OIDC client
@@ -117,7 +121,9 @@ Things to know:
 - **Spring Session / multiple instances**: the default only sees the container sessions of the
   instance that received the SET. Provide your own `SsfSessionTerminator` bean for an external session
   store.
-- Matching can be customized with a `SsfSessionMatcher` bean.
+- **Matching**: a session by its `sid`; a user by `iss` and `sub` of an `iss_sub` identifier (both have
+  to match), by `email` (case-insensitive) or by `phone_number`; `aliases` match if any of their
+  identifiers does. Matching can be customized with a `SsfSessionMatcher` bean.
 - `credential-change` terminates sessions for every kind of change (including a newly added
   credential). To be more selective, set `easyssf.receiver.oidc-client.user-event-types` to an empty list
   and call `SsfSessionTerminator` from your own handler.
@@ -146,6 +152,20 @@ class StepUpHandler implements SsfEventHandler {
 
 Handlers must be idempotent. If a handler throws, the SET is not acknowledged and the transmitter is
 expected to deliver it again, in which case all handlers run again.
+
+`SsfSubject` is the `sub_id` of the SET: a simple subject identifier (RFC 9493: `iss_sub`, `email`,
+`opaque`, `account`, `phone_number`, `did`, `uri`, `aliases`) or a complex subject whose members
+(`user`, `session`, `device`, `tenant`, `application`, `org_unit`, `group`) are identifiers.
+`subject.userIdentifier()` and `subject.session()` are the members the receiver acts on,
+`subject.member("device")` gives the others, and `subject.raw()` the claim as received. Each
+`SsfSubjectIdentifier` has a `format()`, a `value()` (the `sub`, `email`, `id`, ... of its format) and
+its `claims()`. The shortcuts `subject()`, `sessionId()`, `email()` and `opaqueId()` cover the common
+cases.
+
+Event types are identified by their URIs; the aliases (`CaepSessionRevoked`, ...) are a convenience
+of easyssf, use the URIs where you persist or configure event types. `eventTimestamp()` returns the
+`event_timestamp` of the event, which CAEP defines in seconds; a value that is clearly milliseconds is
+accepted as well, as some transmitters send that.
 
 ## Push endpoint
 
@@ -264,7 +284,7 @@ the state is kept in its database instead, without further configuration:
 | Table | Store | Content |
 |---|---|---|
 | `EASYSSF_PROCESSED_SET` | `JdbcSsfJtiDedupStore` | the SETs that were processed, forgotten after `easyssf.receiver.dedup.retention` (7 days) |
-| `EASYSSF_REVOCATION` | `JdbcSsfTokenRevocationStore` | revoked sessions and subjects, removed after `easyssf.receiver.resource-server.revocation-ttl` |
+| `EASYSSF_REVOCATION` | `JdbcSsfTokenRevocationStore` | revoked sessions and subjects, per issuer, removed after `easyssf.receiver.resource-server.revocation-ttl` |
 
 - **Tables**: in an embedded database (H2, HSQLDB, Derby) the tables are created on startup. For any
   other database create them with your migration tool, the statements are in
