@@ -3,6 +3,13 @@
 Thanks for your interest. The [README](README.md#build) describes how to build the project and
 format the sources; this file describes what happens around a change.
 
+## Build artifacts
+
+- **Published POMs are flattened** (`flatten-maven-plugin`, mode `ossrh`): the POM that goes into a
+  jar's artifact has no parent, no imported BOM and every version resolved, so consumers do not see the
+  build structure of this repository. The generated `.flattened-pom.xml` files are ignored by git and
+  removed by `./mvnw clean`. The parent POM itself is not published.
+
 ## Continuous integration
 
 GitHub Actions, see [`.github/workflows`](.github/workflows):
