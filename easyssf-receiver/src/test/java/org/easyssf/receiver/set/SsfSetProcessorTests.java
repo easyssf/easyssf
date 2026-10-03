@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.easyssf.core.event.SsfEventToken;
 import org.easyssf.core.event.SsfEventTypes;
@@ -74,6 +75,36 @@ class SsfSetProcessorTests {
         assertThat(store.size()).isEqualTo(2);
         assertThat(store.seenBefore(this.verifier.verify("jti-3"))).isTrue();
         assertThat(store.seenBefore(this.verifier.verify("jti-1"))).isFalse();
+    }
+
+    @Test
+    void rejectsSetWithCriticalSubjectMemberTheReceiverDoesNotUnderstand() {
+        Map<String, Object> subjectId = Map.of("format", "complex", "user",
+                Map.of("format", "email", "email", "alice@example.com"), "tenant",
+                Map.of("format", "opaque", "id", "t1"), "custom", Map.of("format", "acme-custom", "ref", "x"));
+        SsfSetVerifier verifier = (encodedSet) -> new SsfEventToken(encodedSet, "https://idp.example", Instant.now(),
+                List.of(), Map.of(SsfEventTypes.CAEP_SESSION_REVOKED, Map.of()), subjectId, null, Map.of());
+        SsfSetProcessor processor = new SsfSetProcessor(verifier, null, List.of(this.recordingHandler));
+
+        // nothing declared critical: anything goes
+        assertThat(processor.process("jti-1")).isEqualTo(Outcome.HANDLED);
+
+        // critical members this receiver models are fine, a critical member it does not
+        // model is not
+        processor.setCriticalSubjectMembers((issuer) -> List.of("tenant"));
+        assertThat(processor.process("jti-2")).isEqualTo(Outcome.HANDLED);
+        processor.setCriticalSubjectMembers((issuer) -> List.of("tenant", "custom"));
+        assertThatExceptionOfType(SsfSetVerificationException.class).isThrownBy(() -> processor.process("jti-3"))
+            .satisfies((ex) -> assertThat(ex.getErrorCode()).isEqualTo(SsfSetVerificationException.INVALID_REQUEST))
+            .withMessageContaining("custom");
+
+        // unless the application says it understands it
+        processor.setUnderstoodSubjectMembers(Set.of("user", "tenant", "custom"));
+        assertThat(processor.process("jti-4")).isEqualTo(Outcome.HANDLED);
+        // a critical member that is absent from the subject does not matter
+        processor.setCriticalSubjectMembers((issuer) -> List.of("device"));
+        assertThat(processor.process("jti-5")).isEqualTo(Outcome.HANDLED);
+        assertThat(this.handled).containsExactly("jti-1", "jti-2", "jti-4", "jti-5");
     }
 
     private SsfSetProcessor processor(SsfEventHandler... handlers) {

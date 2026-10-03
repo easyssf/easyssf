@@ -3,6 +3,7 @@ package org.easyssf.receiver.spring.boot.autoconfigure;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -195,6 +196,8 @@ public final class SsfReceiverAutoConfiguration {
         SsfSetProcessor processor = new SsfSetProcessor(verifier, store, handlers.orderedStream().toList());
         processor.setMetrics(metrics.getIfAvailable(() -> SsfReceiverMetrics.NOOP));
         processor.setStreamVerifications((issuer) -> transmitters.getObject().streamVerification(issuer));
+        processor.setUnderstoodSubjectMembers(Set.copyOf(properties.getUnderstoodSubjectMembers()));
+        processor.setCriticalSubjectMembers((issuer) -> transmitters.getObject().criticalSubjectMembers(issuer));
         return processor;
     }
 

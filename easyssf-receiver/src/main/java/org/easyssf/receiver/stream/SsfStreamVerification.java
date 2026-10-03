@@ -98,8 +98,10 @@ public class SsfStreamVerification {
         }
         String expectedStreamId = this.streamId.get();
         Map<String, Object> subjectId = eventContext.eventToken().subjectId();
-        if (expectedStreamId != null && subjectId != null
-                && !("opaque".equals(subjectId.get("format")) && expectedStreamId.equals(subjectId.get("id")))) {
+        // SSF 1.0 8.1.4.1: the sub_id of a verification event is opaque and names the
+        // stream
+        if (expectedStreamId != null && (subjectId == null || !"opaque".equals(subjectId.get("format"))
+                || !expectedStreamId.equals(subjectId.get("id")))) {
             throw new SsfSetVerificationException(SsfSetVerificationException.INVALID_REQUEST,
                     "The verification event is not about the stream of this receiver");
         }

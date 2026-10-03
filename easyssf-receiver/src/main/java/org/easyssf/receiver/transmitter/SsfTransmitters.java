@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import org.easyssf.core.metadata.SsfTransmitterMetadata;
 import org.easyssf.core.support.SsfAssert;
 import org.easyssf.receiver.set.IssuerRoutingSsfSetVerifier;
 import org.easyssf.receiver.set.SsfSetVerifier;
@@ -92,6 +93,22 @@ public final class SsfTransmitters {
     public SsfStreamVerification streamVerification(String issuer) {
         SsfTransmitter transmitter = this.byIssuer.get(issuer);
         return (transmitter != null) ? transmitter.getStreamVerification() : null;
+    }
+
+    /**
+     * @return the {@code critical_subject_members} the transmitter with the given issuer
+     * declares in its metadata, empty if none or the issuer is unknown. The metadata is
+     * the resolved one: a SET of the transmitter was verified with its keys before.
+     */
+    public List<String> criticalSubjectMembers(String issuer) {
+        SsfTransmitter transmitter = this.byIssuer.get(issuer);
+        if (transmitter == null || transmitter.getMetadataResolver() == null) {
+            return List.of();
+        }
+        return transmitter.getMetadataResolver()
+            .getResolvedMetadata()
+            .map(SsfTransmitterMetadata::criticalSubjectMembers)
+            .orElse(List.of());
     }
 
     /**

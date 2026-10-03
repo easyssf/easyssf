@@ -73,6 +73,15 @@ class SsfStreamVerificationTests {
     }
 
     @Test
+    void rejectsVerificationEventWithoutSubjectId() {
+        String state = this.verification.newState();
+        assertRejected(
+                new SsfEventContext(token("jti", SsfEventTypes.SSF_STREAM_VERIFICATION, Map.of("state", state), null)),
+                SsfSetVerificationException.INVALID_REQUEST);
+        assertThatNoException().isThrownBy(() -> this.verification.validate(verificationEvent(STREAM_ID, state)));
+    }
+
+    @Test
     void doesNotCheckTheStreamWhileItIsUnknown() {
         SsfStreamVerification unknownStream = new SsfStreamVerification();
         assertThatNoException().isThrownBy(() -> unknownStream.validate(verificationEvent("any-stream", null)));

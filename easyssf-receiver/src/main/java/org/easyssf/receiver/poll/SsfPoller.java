@@ -83,6 +83,9 @@ public class SsfPoller {
 
     private final ReentrantLock polling = new ReentrantLock();
 
+    /** start() and stop() are idempotent and safe to call from any thread */
+    private final ReentrantLock lifecycle = new ReentrantLock();
+
     /**
      * @param httpClient used to call the transmitter
      * @param tokenProvider provides the access token to authenticate with
@@ -153,24 +156,39 @@ public class SsfPoller {
 
     /**
      * Starts polling the transmitter periodically. Without it, SETs are only fetched by
-     * calling {@link #pollNow()}.
+     * Calling it again while running has no effect. calling {@link #pollNow()}.
      */
     public void start() {
-        ScheduledExecutorService scheduler = Executors
-            .newSingleThreadScheduledExecutor(Thread.ofPlatform().name("ssf-poller").daemon().factory());
-        scheduler.scheduleWithFixedDelay(this::pollQuietly, this.initialDelay.toMillis(), this.interval.toMillis(),
-                TimeUnit.MILLISECONDS);
-        this.scheduler = scheduler;
+        this.lifecycle.lock();
+        try {
+            if (this.scheduler != null) {
+                return;
+            }
+            ScheduledExecutorService scheduler = Executors
+                .newSingleThreadScheduledExecutor(Thread.ofPlatform().name("ssf-poller").daemon().factory());
+            scheduler.scheduleWithFixedDelay(this::pollQuietly, this.initialDelay.toMillis(), this.interval.toMillis(),
+                    TimeUnit.MILLISECONDS);
+            this.scheduler = scheduler;
+        }
+        finally {
+            this.lifecycle.unlock();
+        }
     }
 
     /**
      * Stops polling the transmitter periodically.
      */
     public void stop() {
-        ScheduledExecutorService scheduler = this.scheduler;
-        this.scheduler = null;
-        if (scheduler != null) {
-            scheduler.shutdownNow();
+        this.lifecycle.lock();
+        try {
+            ScheduledExecutorService scheduler = this.scheduler;
+            this.scheduler = null;
+            if (scheduler != null) {
+                scheduler.shutdownNow();
+            }
+        }
+        finally {
+            this.lifecycle.unlock();
         }
     }
 

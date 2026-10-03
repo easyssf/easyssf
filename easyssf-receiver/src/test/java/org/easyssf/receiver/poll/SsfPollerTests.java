@@ -1,6 +1,7 @@
 package org.easyssf.receiver.poll;
 
 import java.net.URI;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -22,6 +23,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
+import static org.awaitility.Awaitility.await;
 import static org.easyssf.core.event.SsfSubjectIdentifiers.opaque;
 
 class SsfPollerTests {
@@ -66,6 +68,28 @@ class SsfPollerTests {
         SsfPoller poller = new SsfPoller(http, tokenProvider, endpoint, processor);
         poller.setMetrics(metrics);
         return poller;
+    }
+
+    @Test
+    void startIsIdempotentAndStopEndsThePollingThread() {
+        this.poller.setInitialDelay(Duration.ofHours(1));
+        this.poller.start();
+        this.poller.start();
+        assertThat(this.poller.isRunning()).isTrue();
+        assertThat(pollerThreads()).hasSize(1);
+        this.poller.stop();
+        this.poller.stop();
+        assertThat(this.poller.isRunning()).isFalse();
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(pollerThreads()).isEmpty());
+    }
+
+    private static List<Thread> pollerThreads() {
+        return Thread.getAllStackTraces()
+            .keySet()
+            .stream()
+            .filter((thread) -> thread.getName().equals("ssf-poller"))
+            .filter(Thread::isAlive)
+            .toList();
     }
 
     @Test

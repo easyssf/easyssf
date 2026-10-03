@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.easyssf.core.event.SsfSubject;
 import org.easyssf.receiver.transmitter.SsfTransmitter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -33,6 +34,14 @@ public class SsfReceiverProperties extends SsfTransmitterProperties {
      * SSF, CAEP and RISC event types and cannot redefine one.
      */
     private final Map<String, String> eventAliases = new LinkedHashMap<>();
+
+    /**
+     * The members of a complex subject the application interprets. A SET with a member a
+     * transmitter declared critical (critical_subject_members) that is not listed here is
+     * rejected. Defaults to the members SsfSubject gives access to: user, session,
+     * device, application, tenant, org_unit, group.
+     */
+    private List<String> understoodSubjectMembers = new ArrayList<>(SsfSubject.MEMBERS);
 
     /**
      * Further transmitters by name, each with the settings of a transmitter. The settings
@@ -64,6 +73,14 @@ public class SsfReceiverProperties extends SsfTransmitterProperties {
 
     public Map<String, String> getEventAliases() {
         return this.eventAliases;
+    }
+
+    public List<String> getUnderstoodSubjectMembers() {
+        return this.understoodSubjectMembers;
+    }
+
+    public void setUnderstoodSubjectMembers(List<String> understoodSubjectMembers) {
+        this.understoodSubjectMembers = understoodSubjectMembers;
     }
 
     public Map<String, SsfTransmitterProperties> getTransmitters() {

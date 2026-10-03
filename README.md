@@ -211,6 +211,13 @@ an event type is named; they cannot redefine a built-in alias. `eventTimestamp()
 `event_timestamp` of the event, which CAEP defines in seconds; a value that is clearly milliseconds is
 accepted as well, as some transmitters send that.
 
+**Critical subject members**: a transmitter can declare in its metadata (`critical_subject_members`)
+members of a complex subject that a receiver must interpret. A SET whose subject has such a member
+is rejected (`invalid_request`) unless the member is one the application understands. By default
+these are the members `SsfSubject` gives access to: `user`, `session`, `device`, `application`,
+`tenant`, `org_unit` and `group`. If the application interprets others, or fewer, list them in
+`easyssf.receiver.understood-subject-members` (or `SsfSetProcessor.setUnderstoodSubjectMembers`).
+
 ## Push endpoint
 
 ```yaml
@@ -467,6 +474,7 @@ name, with its own status. Switch it off with `management.health.easyssf.enabled
 | `easyssf.receiver.allow-insecure-http` | `false` | Accepts `http` for the transmitter issuer and the endpoints it publishes on any host, with a warning on startup. For development only. |
 | `easyssf.receiver.expected-audience` | | When set, every SET must contain it in `aud`. |
 | `easyssf.receiver.delivery-method` | `push` | `push` or `poll`. |
+| `easyssf.receiver.understood-subject-members` | `user, session, device, application, tenant, org_unit, group` | The members of a complex subject the application interprets; a SET with a member the transmitter declared critical that is not listed is rejected. |
 | `easyssf.receiver.event-aliases.*` | | Aliases for event type URIs, e.g. `AcmeLogin: https://events.acme.example/login`, usable wherever an event type is named. |
 | `easyssf.receiver.http.use-rest-client` | `true` | Call the transmitter with the `RestClient` of the application if it has a `RestClient.Builder`. |
 | `easyssf.receiver.http.connect-timeout` / `read-timeout` | `5s` | Calls to the transmitter. Unset, `spring.http.clients.*` applies to the `RestClient` before the 5 seconds do. |

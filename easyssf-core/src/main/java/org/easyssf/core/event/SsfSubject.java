@@ -1,7 +1,11 @@
 package org.easyssf.core.event;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.easyssf.core.support.SsfCollections;
 
@@ -48,6 +52,14 @@ public record SsfSubject(Map<String, Object> raw, SsfSubjectIdentifier identifie
 
     public static final String GROUP = "group";
 
+    /**
+     * The members of a complex subject this class gives access to, in the order of the
+     * SSF specification: {@code user}, {@code session}, {@code device},
+     * {@code application}, {@code tenant}, {@code org_unit}, {@code group}.
+     */
+    public static final Set<String> MEMBERS = Collections
+        .unmodifiableSet(new LinkedHashSet<>(List.of(USER, SESSION, DEVICE, APPLICATION, TENANT, ORG_UNIT, GROUP)));
+
     private static final SsfSubject EMPTY = new SsfSubject(Map.of(), null, Map.of());
 
     public SsfSubject {
@@ -88,6 +100,23 @@ public record SsfSubject(Map<String, Object> raw, SsfSubjectIdentifier identifie
             members.remove(SESSION);
         }
         return new SsfSubject(subjectId, null, members);
+    }
+
+    /**
+     * @return the names of the members of a complex subject, whether or not
+     * {@link #member(String)} can read them; empty for a simple subject
+     */
+    public Set<String> memberNames() {
+        if (this.identifier != null) {
+            return Set.of();
+        }
+        Set<String> names = new LinkedHashSet<>();
+        for (Map.Entry<String, Object> entry : this.raw.entrySet()) {
+            if (!"format".equals(entry.getKey()) && entry.getValue() instanceof Map<?, ?>) {
+                names.add(entry.getKey());
+            }
+        }
+        return Collections.unmodifiableSet(names);
     }
 
     private static boolean hasMembers(Map<String, Object> subjectId) {

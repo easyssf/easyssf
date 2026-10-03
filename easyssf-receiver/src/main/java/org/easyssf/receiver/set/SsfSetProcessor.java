@@ -1,11 +1,14 @@
 package org.easyssf.receiver.set;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Function;
 
 import org.easyssf.core.SsfDeliveryMethod;
 import org.easyssf.core.event.SsfEventToken;
 import org.easyssf.core.event.SsfEventTypes;
+import org.easyssf.core.event.SsfSubject;
 import org.easyssf.core.support.SsfAssert;
 import org.easyssf.receiver.event.SsfEventContext;
 import org.easyssf.receiver.event.SsfEventHandler;
@@ -52,6 +55,10 @@ public class SsfSetProcessor {
 
     private Function<String, SsfStreamVerification> streamVerifications = (issuer) -> null;
 
+    private Set<String> understoodSubjectMembers = SsfSubject.MEMBERS;
+
+    private Function<String, Collection<String>> criticalSubjectMembers = (issuer) -> List.of();
+
     /**
      * @param verifier verifies the SETs
      * @param dedupStore remembers processed SETs, {@code null} to process duplicates
@@ -76,6 +83,29 @@ public class SsfSetProcessor {
      */
     public void setStreamVerification(SsfStreamVerification streamVerification) {
         this.streamVerifications = (issuer) -> streamVerification;
+    }
+
+    /**
+     * The members of a complex subject the application interprets. A SET whose subject
+     * has a member the transmitter declared critical ({@code critical_subject_members} of
+     * its metadata) that is not among them is rejected as {@code invalid_request}, as the
+     * SSF specification requires critical members to be interpreted by the receiver. By
+     * default the members {@link SsfSubject} gives access to, {@link SsfSubject#MEMBERS}.
+     * @param understoodSubjectMembers the member names
+     */
+    public void setUnderstoodSubjectMembers(Set<String> understoodSubjectMembers) {
+        SsfAssert.notNull(understoodSubjectMembers, "understoodSubjectMembers must not be null");
+        this.understoodSubjectMembers = Set.copyOf(understoodSubjectMembers);
+    }
+
+    /**
+     * @param criticalSubjectMembers the {@code critical_subject_members} a transmitter
+     * declares in its metadata, by its issuer; empty for an unknown issuer
+     * @see #setUnderstoodSubjectMembers(Set)
+     */
+    public void setCriticalSubjectMembers(Function<String, Collection<String>> criticalSubjectMembers) {
+        SsfAssert.notNull(criticalSubjectMembers, "criticalSubjectMembers must not be null");
+        this.criticalSubjectMembers = criticalSubjectMembers;
     }
 
     /**
@@ -117,6 +147,7 @@ public class SsfSetProcessor {
             if (streamVerification != null) {
                 streamVerification.validate(eventContext);
             }
+            checkCriticalSubjectMembers(eventContext);
         }
         catch (SsfSetVerificationException ex) {
             this.metrics.setReceived(issuer, deliveryMethod, SetOutcome.INVALID);
@@ -165,6 +196,22 @@ public class SsfSetProcessor {
         eventContext.eventTypes()
             .forEach((eventType) -> this.metrics.eventHandled(transmitter, eventType, deliveryMethod));
         return Outcome.HANDLED;
+    }
+
+    private void checkCriticalSubjectMembers(SsfEventContext eventContext) {
+        Collection<String> critical = this.criticalSubjectMembers.apply(eventContext.eventToken().iss());
+        if (critical == null || critical.isEmpty()) {
+            return;
+        }
+        Set<String> present = eventContext.subject().memberNames();
+        List<String> notUnderstood = critical.stream()
+            .filter((member) -> present.contains(member) && !this.understoodSubjectMembers.contains(member))
+            .toList();
+        if (!notUnderstood.isEmpty()) {
+            throw new SsfSetVerificationException(SsfSetVerificationException.INVALID_REQUEST,
+                    "The subject has the members " + notUnderstood + " which the transmitter declared critical"
+                            + " and this receiver does not understand");
+        }
     }
 
 }

@@ -6,7 +6,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.easyssf.core.event.SsfEventToken;
+import org.easyssf.core.event.SsfSubject;
 import org.easyssf.core.stream.SsfStreamConfiguration;
 import org.junit.jupiter.api.Test;
 
@@ -33,6 +35,24 @@ class SsfValueObjectsTests {
         assertThat(token.claims()).containsOnlyKeys("jti");
         assertThat(token.subjectId()).isNull();
         assertThatThrownBy(() -> token.events().clear()).isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    void nestedMapsAndListsAreCopiedAndUnmodifiableToo() {
+        Map<String, Object> user = new HashMap<>(Map.of("format", "email", "email", "alice@example.com"));
+        List<Object> roles = new ArrayList<>(List.of("admin", Map.of("name", "ops")));
+        Map<String, Object> subjectId = new HashMap<>(Map.of("format", "complex", "user", user, "roles", roles));
+        SsfSubject subject = SsfSubject.from(subjectId);
+        user.put("email", "mallory@example.com");
+        roles.clear();
+        assertThat(subject.user().value()).isEqualTo("alice@example.com");
+        assertThat(subject.raw().get("roles")).asInstanceOf(InstanceOfAssertFactories.LIST).hasSize(2);
+        assertThatThrownBy(() -> ((Map<?, ?>) subject.raw().get("user")).clear())
+            .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> ((List<?>) subject.raw().get("roles")).clear())
+            .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> ((Map<?, ?>) ((List<?>) subject.raw().get("roles")).get(1)).clear())
+            .isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test
