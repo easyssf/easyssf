@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.easyssf.core.metadata.SsfTransmitterMetadata;
 import org.easyssf.core.support.SsfAssert;
@@ -40,6 +41,8 @@ public class SsfTransmitterMetadataResolver {
     private volatile boolean warnedInsecure;
 
     private volatile SsfTransmitterMetadata metadata;
+
+    private final ReentrantLock lock = new ReentrantLock();
 
     /**
      * @param issuer the transmitter issuer
@@ -95,12 +98,19 @@ public class SsfTransmitterMetadataResolver {
     public SsfTransmitterMetadata resolve() {
         SsfTransmitterMetadata metadata = this.metadata;
         if (metadata == null) {
-            synchronized (this) {
+            // a lock, not a monitor: the fetch blocks, and a virtual thread waiting for
+            // it
+            // must not pin its carrier (Java 21 to 23)
+            this.lock.lock();
+            try {
                 metadata = this.metadata;
                 if (metadata == null) {
                     metadata = fetch();
                     this.metadata = metadata;
                 }
+            }
+            finally {
+                this.lock.unlock();
             }
         }
         return metadata;

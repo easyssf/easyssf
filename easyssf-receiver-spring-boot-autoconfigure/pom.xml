@@ -173,7 +173,7 @@
                 <configuration>
                     <!-- -Xshare:off: the agent appends to the bootstrap class path, which the JDK
                          would otherwise report as making class data sharing unavailable -->
-                    <argLine>-javaagent:${org.mockito:mockito-core:jar} -Xshare:off</argLine>
+                    <argLine>-javaagent:${org.mockito:mockito-core:jar} -Xshare:off -Dnet.bytebuddy.experimental=${bytebuddy.experimental}</argLine>
                 </configuration>
             </plugin>
             <plugin>

@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 
 import org.easyssf.core.SsfDeliveryMethod;
@@ -73,6 +74,8 @@ public class SsfPoller {
     private volatile String lastPollError;
 
     private volatile ScheduledExecutorService scheduler;
+
+    private final ReentrantLock polling = new ReentrantLock();
 
     /**
      * @param httpClient used to call the transmitter
@@ -183,11 +186,25 @@ public class SsfPoller {
 
     /**
      * Fetches and processes the SETs that are available at the transmitter and
-     * acknowledges them.
+     * acknowledges them. One poll runs at a time: a call while another is in progress
+     * returns right away.
      * @return the number of SETs fetched, {@code 0} as well if the poll endpoint is not
-     * known yet or the transmitter asked to slow down
+     * known yet, the transmitter asked to slow down or a poll is in progress
      */
-    public synchronized int pollNow() {
+    public int pollNow() {
+        if (!this.polling.tryLock()) {
+            logger.debug("Not polling, a poll is in progress");
+            return 0;
+        }
+        try {
+            return poll();
+        }
+        finally {
+            this.polling.unlock();
+        }
+    }
+
+    private int poll() {
         URI endpoint = this.endpoint.get();
         if (endpoint == null) {
             logger.debug("Not polling, the poll endpoint of the SSF stream is not known yet");

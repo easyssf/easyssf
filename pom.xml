@@ -59,6 +59,9 @@
         <maven.compiler.release>${java.version}</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <!-- lets Byte Buddy (Mockito) accept a class file version it does not know yet, for tests on
+             the newest JDK: -Dbytebuddy.experimental=true -->
+        <bytebuddy.experimental>false</bytebuddy.experimental>
         <!-- reproducible builds: the timestamp of the files in the jars, updated for every release -->
         <project.build.outputTimestamp>2026-10-03T00:00:00Z</project.build.outputTimestamp>
 

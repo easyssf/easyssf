@@ -14,6 +14,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 
 import org.easyssf.core.event.SsfEventToken;
@@ -76,6 +77,8 @@ public class NimbusSsfSetVerifier implements SsfSetVerifier {
     private Clock clock = Clock.systemUTC();
 
     private volatile ConfigurableJWTProcessor<SecurityContext> processor;
+
+    private final ReentrantLock lock = new ReentrantLock();
 
     /**
      * @param issuer the issuer every SET must be issued by
@@ -245,14 +248,22 @@ public class NimbusSsfSetVerifier implements SsfSetVerifier {
 
     private ConfigurableJWTProcessor<SecurityContext> getProcessor() {
         ConfigurableJWTProcessor<SecurityContext> processor = this.processor;
-        if (processor == null) {
-            synchronized (this) {
-                processor = this.processor;
-                if (processor == null) {
-                    processor = createProcessor();
-                    this.processor = processor;
-                }
+        if (processor != null) {
+            return processor;
+        }
+        // a lock, not a monitor: resolving the JWK Set location may call the
+        // transmitter, and a virtual thread waiting for it must not pin its carrier
+        // (Java 21 to 23)
+        this.lock.lock();
+        try {
+            processor = this.processor;
+            if (processor == null) {
+                processor = createProcessor();
+                this.processor = processor;
             }
+        }
+        finally {
+            this.lock.unlock();
         }
         return processor;
     }

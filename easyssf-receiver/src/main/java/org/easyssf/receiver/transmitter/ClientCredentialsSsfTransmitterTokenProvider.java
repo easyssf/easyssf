@@ -11,6 +11,7 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 import org.easyssf.core.support.SsfAssert;
@@ -41,6 +42,8 @@ public class ClientCredentialsSsfTransmitterTokenProvider implements SsfTransmit
     private boolean authenticateWithRequestBody;
 
     private Clock clock = Clock.systemUTC();
+
+    private final ReentrantLock lock = new ReentrantLock();
 
     private String accessToken;
 
@@ -77,16 +80,30 @@ public class ClientCredentialsSsfTransmitterTokenProvider implements SsfTransmit
     }
 
     @Override
-    public synchronized void invalidate() {
-        this.accessToken = null;
+    public void invalidate() {
+        this.lock.lock();
+        try {
+            this.accessToken = null;
+        }
+        finally {
+            this.lock.unlock();
+        }
     }
 
     @Override
-    public synchronized String getAccessToken() {
-        if (this.accessToken == null || !this.clock.instant().isBefore(this.expiresAt)) {
-            requestToken();
+    public String getAccessToken() {
+        // a lock, not a monitor: the token request blocks, and a virtual thread waiting
+        // for it must not pin its carrier (Java 21 to 23)
+        this.lock.lock();
+        try {
+            if (this.accessToken == null || !this.clock.instant().isBefore(this.expiresAt)) {
+                requestToken();
+            }
+            return this.accessToken;
         }
-        return this.accessToken;
+        finally {
+            this.lock.unlock();
+        }
     }
 
     private void requestToken() {
