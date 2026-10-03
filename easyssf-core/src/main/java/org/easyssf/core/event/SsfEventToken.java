@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
+import org.easyssf.core.support.SsfCollections;
+
 /**
  * A verified Security Event Token (SET, RFC 8417) with the SSF profile claims.
  *
@@ -18,4 +20,12 @@ import java.util.Map;
  */
 public record SsfEventToken(String jti, String iss, Instant iat, List<String> aud, Map<String, Object> events,
         Map<String, Object> subjectId, String txn, Map<String, Object> claims) {
+
+    public SsfEventToken {
+        aud = SsfCollections.copyOf(aud);
+        events = SsfCollections.copyOf(events);
+        subjectId = SsfCollections.copyOf(subjectId);
+        claims = SsfCollections.copyOf(claims);
+    }
+
 }

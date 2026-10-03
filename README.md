@@ -469,6 +469,10 @@ SsfTransmitterMetadataResolver metadata = new SsfTransmitterMetadataResolver(iss
 NimbusSsfSetVerifier verifier = new NimbusSsfSetVerifier(issuer,
         () -> metadata.resolve().jwksUri().toString(), httpClient);
 verifier.setExpectedAudience("https://my-app.example");
+// metadata.resolve() also tells specVersion(), deliveryMethodsSupported(), criticalSubjectMembers(),
+// authorizationSchemes() and defaultSubjects(). The resolver requires https for the issuer and the
+// endpoints of the metadata (http on loopback addresses only); pass SsfTransmitterUriPolicy.INSECURE
+// as a fourth argument for a development setup.
 
 SsfEventHandler handler = (eventContext) -> {
     if (eventContext.hasEvent("CaepSessionRevoked")) {

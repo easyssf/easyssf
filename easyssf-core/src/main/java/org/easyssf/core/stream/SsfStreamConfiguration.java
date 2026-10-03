@@ -8,6 +8,7 @@ import java.util.Map;
 
 import org.easyssf.core.SsfDeliveryMethod;
 import org.easyssf.core.event.SsfEventTypes;
+import org.easyssf.core.support.SsfCollections;
 
 /**
  * The configuration of an event stream (SSF 1.0, section 8.1.1), as sent to and returned
@@ -16,6 +17,10 @@ import org.easyssf.core.event.SsfEventTypes;
  * @param claims the members of the stream configuration
  */
 public record SsfStreamConfiguration(Map<String, Object> claims) {
+
+    public SsfStreamConfiguration {
+        claims = SsfCollections.copyOf((claims != null) ? claims : Map.of());
+    }
 
     /**
      * A stream the transmitter pushes events to.
