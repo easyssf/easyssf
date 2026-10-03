@@ -67,7 +67,8 @@ public final class SsfEventContext {
     /**
      * The subject of the event of the given type: the top-level {@code sub_id} claim of
      * the SET or, for transmitters following earlier SSF drafts, the {@code subject}
-     * member of the event payload.
+     * member of the event payload. SETs without the top-level claim reach a handler only
+     * in the {@code LEGACY} subject compatibility mode of the verifier.
      */
     @SuppressWarnings("unchecked")
     public SsfSubject subjectFor(String aliasOrUri) {

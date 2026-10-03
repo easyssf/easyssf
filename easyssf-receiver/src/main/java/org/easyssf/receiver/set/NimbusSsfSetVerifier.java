@@ -18,6 +18,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 
 import org.easyssf.core.event.SsfEventToken;
+import org.easyssf.core.event.SubjectCompatibilityMode;
 import org.easyssf.core.support.SsfAssert;
 import org.easyssf.receiver.http.SsfHttpClient;
 import org.easyssf.receiver.http.SsfHttpRequest;
@@ -71,6 +72,8 @@ public class NimbusSsfSetVerifier implements SsfSetVerifier {
     private int minRsaKeySize = 2048;
 
     private boolean requireTypeHeader = true;
+
+    private SubjectCompatibilityMode subjectCompatibility = SubjectCompatibilityMode.STRICT_SSF_1_0;
 
     private Duration clockSkew = Duration.ofSeconds(60);
 
@@ -144,6 +147,18 @@ public class NimbusSsfSetVerifier implements SsfSetVerifier {
      */
     public void setRequireTypeHeader(boolean requireTypeHeader) {
         this.requireTypeHeader = requireTypeHeader;
+    }
+
+    /**
+     * How strictly the subject of a SET is validated:
+     * {@link SubjectCompatibilityMode#STRICT_SSF_1_0} requires the top-level
+     * {@code sub_id} claim of SSF 1.0, {@link SubjectCompatibilityMode#LEGACY} accepts
+     * SETs of transmitters following earlier drafts, which put the subject into the event
+     * payload.
+     */
+    public void setSubjectCompatibilityMode(SubjectCompatibilityMode subjectCompatibility) {
+        SsfAssert.notNull(subjectCompatibility, "subjectCompatibility must not be null");
+        this.subjectCompatibility = subjectCompatibility;
     }
 
     /**
@@ -228,6 +243,13 @@ public class NimbusSsfSetVerifier implements SsfSetVerifier {
         }
         if (!(claims.getClaim("events") instanceof Map<?, ?> events) || events.isEmpty()) {
             throw invalid(SsfSetVerificationException.INVALID_REQUEST, "The SET has no events claim", null);
+        }
+        if (this.subjectCompatibility == SubjectCompatibilityMode.STRICT_SSF_1_0
+                && !(claims.getClaim("sub_id") instanceof Map<?, ?> subjectId && !subjectId.isEmpty())) {
+            throw invalid(SsfSetVerificationException.INVALID_REQUEST,
+                    "The SET has no top-level sub_id claim, which SSF 1.0 requires (the subject compatibility mode"
+                            + " LEGACY accepts SETs of transmitters that put the subject into the event)",
+                    null);
         }
     }
 

@@ -502,6 +502,7 @@ name, with its own status. Switch it off with `management.health.easyssf.enabled
 | `easyssf.receiver.set-validation.accepted-algorithms` | `RS256` | JWS algorithms accepted for SETs. |
 | `easyssf.receiver.set-validation.min-rsa-key-size` | `2048` | `0` disables the check. |
 | `easyssf.receiver.set-validation.require-type-header` | `true` | Requires `typ: secevent+jwt`. |
+| `easyssf.receiver.set-validation.subject-compatibility` | `strict-ssf-1-0` | Requires the top-level `sub_id` claim of SSF 1.0. `legacy` accepts SETs of transmitters following earlier drafts, which put the subject into the event. |
 | `easyssf.receiver.set-validation.clock-skew` | `60s` | Tolerance for `iat` in the future. |
 | `easyssf.receiver.push.enabled` | `true` | |
 | `easyssf.receiver.push.endpoint-path` | `/ssf/push` | |

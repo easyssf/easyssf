@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.easyssf.core.SsfDeliveryMethod;
+import org.easyssf.core.event.SubjectCompatibilityMode;
 
 /**
  * The settings of one SSF transmitter. {@link SsfReceiverProperties} binds them at
@@ -463,6 +464,13 @@ public class SsfTransmitterProperties {
         private boolean requireTypeHeader = true;
 
         /**
+         * How strictly the subject of a SET is validated: 'strict-ssf-1-0' requires the
+         * top-level 'sub_id' claim of SSF 1.0, 'legacy' accepts SETs of transmitters
+         * following earlier drafts, which put the subject into the event payload.
+         */
+        private SubjectCompatibilityMode subjectCompatibility = SubjectCompatibilityMode.STRICT_SSF_1_0;
+
+        /**
          * Tolerated clock skew when checking that a SET was not issued in the future.
          */
         private Duration clockSkew = Duration.ofSeconds(60);
@@ -489,6 +497,14 @@ public class SsfTransmitterProperties {
 
         public void setRequireTypeHeader(boolean requireTypeHeader) {
             this.requireTypeHeader = requireTypeHeader;
+        }
+
+        public SubjectCompatibilityMode getSubjectCompatibility() {
+            return this.subjectCompatibility;
+        }
+
+        public void setSubjectCompatibility(SubjectCompatibilityMode subjectCompatibility) {
+            this.subjectCompatibility = subjectCompatibility;
         }
 
         public Duration getClockSkew() {

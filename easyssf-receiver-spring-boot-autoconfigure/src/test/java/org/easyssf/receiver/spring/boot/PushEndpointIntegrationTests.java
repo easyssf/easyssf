@@ -66,7 +66,7 @@ class PushEndpointIntegrationTests {
     @Test
     @Order(3)
     void acknowledgesStreamVerificationEvent() throws Exception {
-        String set = transmitter.signSet(transmitter.setClaims("SsfStreamVerification", null).build());
+        String set = transmitter.signSet(transmitter.setClaims("SsfStreamVerification", opaque("stream-1")).build());
         assertThat(push(set).statusCode()).isEqualTo(202);
     }
 

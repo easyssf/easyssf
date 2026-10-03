@@ -3,10 +3,12 @@ package org.easyssf.receiver.set;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
+import java.util.Map;
 import java.util.Set;
 
 import org.easyssf.core.event.SsfEventToken;
 import org.easyssf.core.event.SsfEventTypes;
+import org.easyssf.core.event.SubjectCompatibilityMode;
 import org.easyssf.receiver.http.JdkSsfHttpClient;
 import org.easyssf.receiver.transmitter.SsfTransmitterUnavailableException;
 import org.easyssf.test.TestTransmitter;
@@ -146,6 +148,20 @@ class NimbusSsfSetVerifierTests {
                 SsfSetVerificationException.INVALID_REQUEST);
         assertRejected(transmitter.signSet(sessionRevoked().claim("events", null).build()),
                 SsfSetVerificationException.INVALID_REQUEST);
+    }
+
+    @Test
+    void rejectsSetWithoutTopLevelSubjectUnlessAllowed() {
+        // the subject in the event payload, as in earlier SSF drafts
+        Map<String, Object> event = Map.of("subject", complex(issSub(transmitter.issuer(), "alice"), opaque("s-1")),
+                "event_timestamp", Instant.now().getEpochSecond());
+        String legacy = transmitter.signSet(transmitter.setClaims("CaepSessionRevoked", null, event).build());
+        assertRejected(legacy, SsfSetVerificationException.INVALID_REQUEST);
+        assertRejected(transmitter.signSet(sessionRevoked().claim("sub_id", Map.of()).build()),
+                SsfSetVerificationException.INVALID_REQUEST);
+
+        this.verifier.setSubjectCompatibilityMode(SubjectCompatibilityMode.LEGACY);
+        assertThat(this.verifier.verify(legacy).subjectId()).isNull();
     }
 
     @Test
