@@ -63,11 +63,11 @@ public abstract class AbstractReceiverConformanceTest {
 
     private static final Duration MODULE_TIMEOUT = Duration.ofMinutes(8);
 
-    private ConformanceSuite suite;
+    private volatile ConformanceSuite suite;
 
-    private Plan plan;
+    private volatile Plan plan;
 
-    private String alias;
+    private volatile String alias;
 
     /**
      * @return the plan to run
@@ -97,31 +97,45 @@ public abstract class AbstractReceiverConformanceTest {
 
     @BeforeAll
     void createPlan() {
-        this.suite = ConformanceSuite.instance();
-        JsonNode config = suiteConfig();
-        this.alias = config.path("alias").asString();
-        assertThat(this.alias).as("alias in " + plan().configFile()).isNotBlank();
-        this.plan = this.suite.client().createPlan(plan().planName(), plan().variant(), config);
-        logger.info("Created plan {} {} with {} modules: {}", plan().planName(), plan().variant(),
-                this.plan.modules().size(), this.plan.url());
+        createdPlan();
+    }
+
+    /**
+     * The plan in the suite, created on first use by whichever instance of the test class
+     * asks for it. A framework may run the lifecycle methods on another instance than the
+     * one JUnit holds (Quarkus 3.27 does, running them on the CDI bean), so the plan is
+     * not something {@link #createPlan()} can hand over through a field.
+     */
+    private synchronized Plan createdPlan() {
+        if (this.plan == null) {
+            this.suite = ConformanceSuite.instance();
+            JsonNode config = suiteConfig();
+            this.alias = config.path("alias").asString();
+            assertThat(this.alias).as("alias in " + plan().configFile()).isNotBlank();
+            this.plan = this.suite.client().createPlan(plan().planName(), plan().variant(), config);
+            logger.info("Created plan {} {} with {} modules: {}", plan().planName(), plan().variant(),
+                    this.plan.modules().size(), this.plan.url());
+        }
+        return this.plan;
     }
 
     Stream<PlanModule> modules() {
-        return this.plan.modules().stream();
+        return createdPlan().modules().stream();
     }
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("modules")
     void conformance(PlanModule module) {
+        Plan plan = createdPlan();
         ReceiverModules.Expectation expectation = ReceiverModules.expectation(module.name());
-        String moduleId = this.suite.client().startModule(this.plan, module);
+        String moduleId = this.suite.client().startModule(plan, module);
         logger.info("Module {} {} is waiting for the receiver: {}", module, moduleId,
                 this.suite.baseUri().resolve("/log-detail.html?log=" + moduleId));
         ConformanceRun run = runner().start(expectation.scenario(), issuer(), deliveryMethod(),
                 expectation.idleTimeout());
         await().atMost(MODULE_TIMEOUT).pollInterval(Duration.ofMillis(500)).until(() -> !run.isActive());
         logger.info("Receiver run {} ended with {}:\n{}", run.getId(), run.getStatus(), receiverLog(run));
-        ConformanceModuleResult result = this.suite.client().awaitResult(this.plan, module, moduleId, MODULE_TIMEOUT);
+        ConformanceModuleResult result = this.suite.client().awaitResult(plan, module, moduleId, MODULE_TIMEOUT);
         if (!result.finishedWith("PASSED")) {
             logger.error("Full log of the failed module {}:\n{}", module, result.logs().toPrettyString());
             fail(result.summary() + "\nReceiver run " + run.getId() + " ended with " + run.getStatus() + ":\n"
@@ -131,6 +145,7 @@ public abstract class AbstractReceiverConformanceTest {
     }
 
     private String issuer() {
+        createdPlan();
         return this.suite.baseUri() + "/test/a/" + this.alias;
     }
 
