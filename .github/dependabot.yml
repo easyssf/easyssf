@@ -1,0 +1,24 @@
+# Keeps the Maven dependencies and the GitHub Actions current. The conformance suite images are
+# pinned by digest in .github/workflows/conformance.yml and are not covered: check the registry
+# for a new release by hand.
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      spring:
+        patterns:
+          - "org.springframework*"
+      maven-plugins:
+        patterns:
+          - "org.apache.maven.plugins:*"
+          - "*:*-maven-plugin"
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
