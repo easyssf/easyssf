@@ -67,7 +67,7 @@
              the import only resolves versions. -->
         <spring-boot.version>4.1.1</spring-boot.version>
         <!-- not managed by the Spring Boot BOM, Spring Security pulls it in transitively -->
-        <nimbus-jose-jwt.version>10.9.1</nimbus-jose-jwt.version>
+        <nimbus-jose-jwt.version>10.10</nimbus-jose-jwt.version>
 
         <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
         <maven-surefire-plugin.version>3.5.6</maven-surefire-plugin.version>
