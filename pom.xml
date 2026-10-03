@@ -48,6 +48,7 @@
         <module>easyssf-core</module>
         <module>easyssf-test</module>
         <module>easyssf-receiver</module>
+        <module>easyssf-receiver-jdbc</module>
         <module>easyssf-receiver-spring-boot-autoconfigure</module>
         <module>easyssf-receiver-spring-boot-starter</module>
         <module>easyssf-receiver-spring-boot-examples</module>
@@ -99,6 +100,11 @@
             <dependency>
                 <groupId>org.easyssf</groupId>
                 <artifactId>easyssf-test</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.easyssf</groupId>
+                <artifactId>easyssf-receiver-jdbc</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

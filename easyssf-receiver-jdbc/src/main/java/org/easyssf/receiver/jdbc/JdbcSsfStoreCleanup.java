@@ -1,4 +1,4 @@
-package org.easyssf.receiver.spring.boot.jdbc;
+package org.easyssf.receiver.jdbc;
 
 import java.time.Duration;
 import java.util.List;
@@ -6,19 +6,19 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-import org.springframework.context.SmartLifecycle;
-import org.springframework.util.Assert;
+import org.easyssf.core.support.SsfAssert;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Purges the expired rows of the {@link JdbcSsfExpiringStore stores} periodically, so
- * that they do not linger in a receiver that gets no events for a while. Runs on its own
- * daemon thread while the application context is running.
+ * that they do not linger in a receiver that gets no events for a while. Either call
+ * {@link #purgeExpired()} from the scheduler of the application, or {@link #start()} to
+ * run it on a daemon thread of its own.
  */
-public class JdbcSsfStoreCleanup implements SmartLifecycle {
+public class JdbcSsfStoreCleanup {
 
-    private static final Log logger = LogFactory.getLog(JdbcSsfStoreCleanup.class);
+    private static final Logger logger = LoggerFactory.getLogger(JdbcSsfStoreCleanup.class);
 
     private final List<JdbcSsfExpiringStore> stores;
 
@@ -28,11 +28,11 @@ public class JdbcSsfStoreCleanup implements SmartLifecycle {
 
     /**
      * @param stores the stores to purge
-     * @param interval how often; the cleanup is off when zero or negative
+     * @param interval how often; the periodic cleanup is off when zero or negative
      */
     public JdbcSsfStoreCleanup(List<JdbcSsfExpiringStore> stores, Duration interval) {
-        Assert.notNull(stores, "stores must not be null");
-        Assert.notNull(interval, "interval must not be null");
+        SsfAssert.notNull(stores, "stores must not be null");
+        SsfAssert.notNull(interval, "interval must not be null");
         this.stores = List.copyOf(stores);
         this.interval = interval;
     }
@@ -61,7 +61,9 @@ public class JdbcSsfStoreCleanup implements SmartLifecycle {
         return deleted;
     }
 
-    @Override
+    /**
+     * Starts purging periodically on a daemon thread, if enabled.
+     */
     public synchronized void start() {
         if (this.executor != null || !isEnabled()) {
             return;
@@ -75,7 +77,6 @@ public class JdbcSsfStoreCleanup implements SmartLifecycle {
         this.executor.scheduleWithFixedDelay(this::purgeExpired, millis, millis, TimeUnit.MILLISECONDS);
     }
 
-    @Override
     public synchronized void stop() {
         if (this.executor != null) {
             this.executor.shutdownNow();
@@ -83,7 +84,6 @@ public class JdbcSsfStoreCleanup implements SmartLifecycle {
         }
     }
 
-    @Override
     public synchronized boolean isRunning() {
         return this.executor != null;
     }

@@ -1,4 +1,4 @@
-package org.easyssf.receiver.spring.boot.jdbc;
+package org.easyssf.receiver.jdbc;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -13,11 +13,9 @@ import java.util.Map;
 import java.util.UUID;
 
 import org.easyssf.core.event.SsfEventToken;
+import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.core.io.ClassPathResource;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
@@ -33,16 +31,17 @@ class JdbcSsfStoresTests {
 
     private final MutableClock clock = new MutableClock(NOW);
 
-    private JdbcTemplate jdbc;
+    private SsfJdbcOperations jdbc;
 
     @BeforeEach
     void createDatabase() {
-        this.jdbc = new JdbcTemplate(
-                new DriverManagerDataSource("jdbc:h2:mem:" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1"));
+        JdbcDataSource dataSource = new JdbcDataSource();
+        dataSource.setURL("jdbc:h2:mem:" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1");
+        this.jdbc = new DataSourceSsfJdbcOperations(dataSource);
         JdbcSsfSchema.prepareTable(this.jdbc, JdbcSsfSchema.processedSetTable(PREFIX),
-                JdbcSsfSchema.createProcessedSetTable(PREFIX), true);
+                JdbcSsfSchema.createProcessedSetTable(PREFIX), true, null);
         JdbcSsfSchema.prepareTable(this.jdbc, JdbcSsfSchema.revocationTable(PREFIX),
-                JdbcSsfSchema.createRevocationTable(PREFIX), true);
+                JdbcSsfSchema.createRevocationTable(PREFIX), true, null);
     }
 
     private JdbcSsfJtiDedupStore dedupStore() {
@@ -60,8 +59,7 @@ class JdbcSsfStoresTests {
 
     @Test
     void schemaFileMatchesTheStatementsThatCreateTheTables() throws Exception {
-        String schema = new ClassPathResource("org/easyssf/receiver/spring/boot/jdbc/schema.sql")
-            .getContentAsString(StandardCharsets.UTF_8);
+        String schema = new String(getClass().getResourceAsStream("schema.sql").readAllBytes(), StandardCharsets.UTF_8);
         List<String> statements = Arrays.stream(schema.replaceAll("(?m)^--.*$", "").split(";"))
             .map(JdbcSsfStoresTests::normalize)
             .filter((statement) -> !statement.isEmpty())
@@ -78,23 +76,23 @@ class JdbcSsfStoresTests {
     @Test
     void preparingTablesIsRepeatableAndReportsMissingTables() {
         JdbcSsfSchema.prepareTable(this.jdbc, JdbcSsfSchema.revocationTable(PREFIX),
-                JdbcSsfSchema.createRevocationTable(PREFIX), true);
+                JdbcSsfSchema.createRevocationTable(PREFIX), true, null);
         JdbcSsfSchema.prepareTable(this.jdbc, JdbcSsfSchema.revocationTable(PREFIX),
-                JdbcSsfSchema.createRevocationTable(PREFIX), false);
+                JdbcSsfSchema.createRevocationTable(PREFIX), false, null);
         assertThatIllegalStateException()
             .isThrownBy(() -> JdbcSsfSchema.prepareTable(this.jdbc, JdbcSsfSchema.revocationTable("OTHER_"),
-                    JdbcSsfSchema.createRevocationTable("OTHER_"), false))
+                    JdbcSsfSchema.createRevocationTable("OTHER_"), false, null))
             .withMessageContaining("OTHER_REVOCATION")
-            .withMessageContaining("easyssf.receiver.jdbc.initialize-schema");
+            .withMessageContaining("schema.sql");
     }
 
     @Test
     void tablePrefixIsConfigurableButRestricted() {
         JdbcSsfSchema.prepareTable(this.jdbc, JdbcSsfSchema.processedSetTable("APP_SSF_"),
-                JdbcSsfSchema.createProcessedSetTable("APP_SSF_"), true);
+                JdbcSsfSchema.createProcessedSetTable("APP_SSF_"), true, null);
         JdbcSsfJtiDedupStore store = new JdbcSsfJtiDedupStore(this.jdbc, "APP_SSF_");
         assertThat(store.seenBefore(set("jti-1"))).isFalse();
-        assertThat(this.jdbc.queryForObject("SELECT COUNT(*) FROM APP_SSF_PROCESSED_SET", Integer.class)).isEqualTo(1);
+        assertThat(count("APP_SSF_PROCESSED_SET")).isEqualTo(1);
         assertThatIllegalArgumentException().isThrownBy(() -> new JdbcSsfJtiDedupStore(this.jdbc, "X; DROP TABLE Y;"));
     }
 
@@ -130,7 +128,7 @@ class JdbcSsfStoresTests {
         assertThat(store.seenBefore(set("jti-1"))).isTrue();
         this.clock.advance(Duration.ofHours(2));
         assertThat(store.seenBefore(set("jti-1"))).isFalse();
-        assertThat(this.jdbc.queryForObject("SELECT COUNT(*) FROM EASYSSF_PROCESSED_SET", Integer.class)).isEqualTo(1);
+        assertThat(count("EASYSSF_PROCESSED_SET")).isEqualTo(1);
     }
 
     @Test
@@ -178,7 +176,7 @@ class JdbcSsfStoresTests {
         assertThat(store.getSubjectRevokedAt(ISSUER, "alice")).isEqualTo(NOW);
         store.revokeSubject(ISSUER, "alice", NOW.plusSeconds(30));
         assertThat(store.getSubjectRevokedAt(ISSUER, "alice")).isEqualTo(NOW.plusSeconds(30));
-        assertThat(this.jdbc.queryForObject("SELECT COUNT(*) FROM EASYSSF_REVOCATION", Integer.class)).isEqualTo(1);
+        assertThat(count("EASYSSF_REVOCATION")).isEqualTo(1);
     }
 
     @Test
@@ -194,7 +192,7 @@ class JdbcSsfStoresTests {
         assertThat(store.getSubjectRevokedAt(ISSUER, "alice")).isNull();
         assertThat(store.isRevoked(ISSUER, "session-1", "alice", NOW.minusSeconds(60))).isFalse();
         store.revokeSession(ISSUER, "session-2");
-        assertThat(this.jdbc.queryForList("SELECT ID FROM EASYSSF_REVOCATION", String.class))
+        assertThat(this.jdbc.query("SELECT ID FROM EASYSSF_REVOCATION", (row) -> row.getString(1)))
             .containsExactly("session-2");
     }
 
@@ -207,7 +205,7 @@ class JdbcSsfStoresTests {
         dedupStore.seenBefore(set("recent"));
         this.clock.advance(Duration.ofHours(12).plusSeconds(1));
         assertThat(dedupStore.purgeExpired()).isEqualTo(1);
-        assertThat(this.jdbc.queryForList("SELECT JTI FROM EASYSSF_PROCESSED_SET", String.class))
+        assertThat(this.jdbc.query("SELECT JTI FROM EASYSSF_PROCESSED_SET", (row) -> row.getString(1)))
             .containsExactly("recent");
         assertThat(dedupStore.purgeExpired()).isZero();
 
@@ -218,7 +216,7 @@ class JdbcSsfStoresTests {
         revocationStore.revokeSession(ISSUER, "recent-session");
         this.clock.advance(Duration.ofMinutes(5));
         assertThat(revocationStore.purgeExpired()).isEqualTo(1);
-        assertThat(this.jdbc.queryForList("SELECT ID FROM EASYSSF_REVOCATION", String.class))
+        assertThat(this.jdbc.query("SELECT ID FROM EASYSSF_REVOCATION", (row) -> row.getString(1)))
             .containsExactly("recent-session");
         assertThat(revocationStore.purgeExpired()).isZero();
     }
@@ -244,6 +242,10 @@ class JdbcSsfStoresTests {
         assertThat(cleanup.isRunning()).isTrue();
         cleanup.stop();
         assertThat(cleanup.isRunning()).isFalse();
+    }
+
+    private int count(String table) {
+        return this.jdbc.query("SELECT COUNT(*) FROM " + table, (row) -> row.getInt(1)).get(0);
     }
 
     private static SsfEventToken set(String jti) {

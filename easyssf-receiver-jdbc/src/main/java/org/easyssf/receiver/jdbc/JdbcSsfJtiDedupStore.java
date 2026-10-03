@@ -1,14 +1,12 @@
-package org.easyssf.receiver.spring.boot.jdbc;
+package org.easyssf.receiver.jdbc;
 
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 
 import org.easyssf.core.event.SsfEventToken;
+import org.easyssf.core.support.SsfAssert;
 import org.easyssf.receiver.set.SsfJtiDedupStore;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.jdbc.core.JdbcOperations;
-import org.springframework.util.Assert;
 
 /**
  * {@link SsfJtiDedupStore} that remembers processed SETs in a database table, so that a
@@ -27,7 +25,7 @@ public class JdbcSsfJtiDedupStore implements SsfJtiDedupStore, JdbcSsfExpiringSt
 
     private static final Duration CLEANUP_INTERVAL = Duration.ofMinutes(1);
 
-    private final JdbcOperations jdbc;
+    private final SsfJdbcOperations jdbc;
 
     private final String insert;
 
@@ -46,8 +44,8 @@ public class JdbcSsfJtiDedupStore implements SsfJtiDedupStore, JdbcSsfExpiringSt
      * @param tablePrefix the prefix of the table name, see
      * {@link JdbcSsfSchema#DEFAULT_TABLE_PREFIX}
      */
-    public JdbcSsfJtiDedupStore(JdbcOperations jdbc, String tablePrefix) {
-        Assert.notNull(jdbc, "jdbc must not be null");
+    public JdbcSsfJtiDedupStore(SsfJdbcOperations jdbc, String tablePrefix) {
+        SsfAssert.notNull(jdbc, "jdbc must not be null");
         String table = JdbcSsfSchema.processedSetTable(tablePrefix);
         this.jdbc = jdbc;
         this.insert = "INSERT INTO " + table + " (ISSUER, JTI, PROCESSED_AT) VALUES (?, ?, ?)";
@@ -60,12 +58,12 @@ public class JdbcSsfJtiDedupStore implements SsfJtiDedupStore, JdbcSsfExpiringSt
      * keeps trying to deliver a SET.
      */
     public void setRetention(Duration retention) {
-        Assert.isTrue(retention != null && retention.isPositive(), "retention must be positive");
+        SsfAssert.isTrue(retention != null && retention.isPositive(), "retention must be positive");
         this.retention = retention;
     }
 
     public void setClock(Clock clock) {
-        Assert.notNull(clock, "clock must not be null");
+        SsfAssert.notNull(clock, "clock must not be null");
         this.clock = clock;
     }
 
@@ -77,7 +75,7 @@ public class JdbcSsfJtiDedupStore implements SsfJtiDedupStore, JdbcSsfExpiringSt
             this.jdbc.update(this.insert, eventToken.iss(), eventToken.jti(), now.toEpochMilli());
             return false;
         }
-        catch (DuplicateKeyException ex) {
+        catch (SsfJdbcDuplicateKeyException ex) {
             return true;
         }
     }

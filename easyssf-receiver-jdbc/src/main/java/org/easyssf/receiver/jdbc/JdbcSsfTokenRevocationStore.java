@@ -1,4 +1,4 @@
-package org.easyssf.receiver.spring.boot.jdbc;
+package org.easyssf.receiver.jdbc;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -6,10 +6,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.easyssf.core.support.SsfAssert;
 import org.easyssf.receiver.revocation.SsfTokenRevocationStore;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.jdbc.core.JdbcOperations;
-import org.springframework.util.Assert;
 
 /**
  * {@link SsfTokenRevocationStore} that keeps revocations in a database table, so that all
@@ -30,7 +28,7 @@ public class JdbcSsfTokenRevocationStore implements SsfTokenRevocationStore, Jdb
 
     private static final String SUBJECT = "SUBJECT";
 
-    private final JdbcOperations jdbc;
+    private final SsfJdbcOperations jdbc;
 
     private final String table;
 
@@ -38,16 +36,16 @@ public class JdbcSsfTokenRevocationStore implements SsfTokenRevocationStore, Jdb
 
     private Clock clock = Clock.systemUTC();
 
-    public JdbcSsfTokenRevocationStore(JdbcOperations jdbc, String tablePrefix, Duration ttl) {
-        Assert.notNull(jdbc, "jdbc must not be null");
-        Assert.isTrue(ttl != null && ttl.isPositive(), "ttl must be positive");
+    public JdbcSsfTokenRevocationStore(SsfJdbcOperations jdbc, String tablePrefix, Duration ttl) {
+        SsfAssert.notNull(jdbc, "jdbc must not be null");
+        SsfAssert.isTrue(ttl != null && ttl.isPositive(), "ttl must be positive");
         this.jdbc = jdbc;
         this.table = JdbcSsfSchema.revocationTable(tablePrefix);
         this.ttl = ttl;
     }
 
     public void setClock(Clock clock) {
-        Assert.notNull(clock, "clock must not be null");
+        SsfAssert.notNull(clock, "clock must not be null");
         this.clock = clock;
     }
 
@@ -68,8 +66,8 @@ public class JdbcSsfTokenRevocationStore implements SsfTokenRevocationStore, Jdb
     }
 
     private void revoke(String kind, String issuer, String id, Instant revokedAt) {
-        Assert.hasText(issuer, "issuer must not be empty");
-        Assert.hasText(id, "id must not be empty");
+        SsfAssert.hasText(issuer, "issuer must not be empty");
+        SsfAssert.hasText(id, "id must not be empty");
         Instant now = this.clock.instant();
         purgeExpired();
         long expiresAt = now.plus(this.ttl).toEpochMilli();
@@ -81,7 +79,7 @@ public class JdbcSsfTokenRevocationStore implements SsfTokenRevocationStore, Jdb
                     "INSERT INTO " + this.table + " (KIND, ISSUER, ID, REVOKED_AT, EXPIRES_AT) VALUES (?, ?, ?, ?, ?)",
                     kind, issuer, id, revokedAt.toEpochMilli(), expiresAt);
         }
-        catch (DuplicateKeyException ex) {
+        catch (SsfJdbcDuplicateKeyException ex) {
             // revoked by another instance at the same time
             update(kind, issuer, id, revokedAt.toEpochMilli(), expiresAt);
         }
@@ -110,9 +108,9 @@ public class JdbcSsfTokenRevocationStore implements SsfTokenRevocationStore, Jdb
         if (issuer == null || subject == null) {
             return null;
         }
-        List<Long> revokedAt = this.jdbc.queryForList(
+        List<Long> revokedAt = this.jdbc.query(
                 "SELECT REVOKED_AT FROM " + this.table + " WHERE KIND = ? AND ISSUER = ? AND ID = ? AND EXPIRES_AT > ?",
-                Long.class, SUBJECT, issuer, subject, this.clock.instant().toEpochMilli());
+                (row) -> row.getLong(1), SUBJECT, issuer, subject, this.clock.instant().toEpochMilli());
         return revokedAt.isEmpty() ? null : Instant.ofEpochMilli(revokedAt.get(0));
     }
 
@@ -137,8 +135,8 @@ public class JdbcSsfTokenRevocationStore implements SsfTokenRevocationStore, Jdb
         }
         String query = "SELECT KIND, REVOKED_AT FROM " + this.table + " WHERE EXPIRES_AT > ? AND ISSUER = ? AND ("
                 + String.join(" OR ", conditions) + ")";
-        List<Boolean> revoked = this.jdbc.query(query, (row, index) -> SESSION.equals(row.getString(1))
-                || issuedAt == null || issuedAt.toEpochMilli() <= row.getLong(2), arguments.toArray());
+        List<Boolean> revoked = this.jdbc.query(query, (row) -> SESSION.equals(row.getString(1)) || issuedAt == null
+                || issuedAt.toEpochMilli() <= row.getLong(2), arguments.toArray());
         return revoked.contains(Boolean.TRUE);
     }
 

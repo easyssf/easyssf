@@ -43,6 +43,7 @@ PUSH and POLL delivery.
 |---|---|---|
 | `easyssf-core` | The data structures of SSF shared by receivers and (later) transmitters: SETs, subjects, event types, stream configuration, transmitter metadata. | nothing |
 | `easyssf-receiver` | The receiver, independent of any framework: SET verification, de-duplication, event handlers, push handling, polling, stream management, token revocation and session termination logic. | `easyssf-core`, Nimbus JOSE + JWT, SLF4J |
+| `easyssf-receiver-jdbc` | The database-backed stores of the receiver (processed SETs, revocations), independent of any framework: the SQL, the schema and a small `SsfJdbcOperations` interface, implemented over a `DataSource` or by a framework's template. | `easyssf-receiver` |
 | `easyssf-receiver-spring-boot-starter` | The receiver for Spring Boot 4.1 (Spring Security 7.1, servlet stack): configuration properties, auto-configuration, push endpoint, resource server and OIDC client integration. | `easyssf-receiver`, Spring Boot |
 | `easyssf-test` | Test support: a transmitter that signs and delivers SETs, for the tests of your receiver, see [Testing your receiver](#testing-your-receiver). | `easyssf-core`, Nimbus JOSE + JWT |
 | [`easyssf-receiver-spring-boot-examples`](easyssf-receiver-spring-boot-examples) | Example resource server and OIDC client with a Keycloak setup. | |
@@ -360,8 +361,8 @@ the state is kept in its database instead, without further configuration:
 
 - **Tables**: in an embedded database (H2, HSQLDB, Derby) the tables are created on startup. For any
   other database create them with your migration tool, the statements are in
-  [`schema.sql`](easyssf-receiver-spring-boot-autoconfigure/src/main/resources/org/easyssf/receiver/spring/boot/jdbc/schema.sql)
-  (`classpath:org/easyssf/receiver/spring/boot/jdbc/schema.sql`), or set
+  [`schema.sql`](easyssf-receiver-jdbc/src/main/resources/org/easyssf/receiver/jdbc/schema.sql)
+  (`classpath:org/easyssf/receiver/jdbc/schema.sql`), or set
   `easyssf.receiver.jdbc.initialize-schema=always`. If a table is missing the application fails on
   startup and says so, rather than on the first event.
 - **Opting out**: `easyssf.receiver.jdbc.enabled=false` keeps the state in memory although the
@@ -373,6 +374,9 @@ the state is kept in its database instead, without further configuration:
   Both stores offer `purgeExpired()` to do it from your own scheduler.
 - **Cost**: a resource server checks every access token with one query on the primary key of
   `EASYSSF_REVOCATION`.
+- The stores live in `easyssf-receiver-jdbc` and have no Spring dependency: `SsfJdbcOperations` runs
+  their SQL, over a `DataSource` (`DataSourceSsfJdbcOperations`) or, in Spring Boot, the `JdbcTemplate`
+  of the application, so its transactions and exception translation apply.
 - The stores use plain SQL (timestamps are stored as milliseconds since the epoch) and were tested
   with H2 and PostgreSQL. The revocation table is only used by resource servers. Sessions of an
   OIDC client are not affected, see `SsfSessionTerminator`.

@@ -1,4 +1,4 @@
-package org.easyssf.receiver.spring.boot.jdbc;
+package org.easyssf.receiver.jdbc;
 
 /**
  * A store whose rows expire and are purged, by the store itself when it is written to and

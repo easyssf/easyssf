@@ -1,15 +1,14 @@
-package org.easyssf.receiver.spring.boot.jdbc;
+package org.easyssf.receiver.jdbc;
 
 import java.util.List;
 
-import org.springframework.jdbc.BadSqlGrammarException;
-import org.springframework.jdbc.core.JdbcOperations;
-import org.springframework.util.Assert;
+import org.easyssf.core.support.SsfAssert;
 
 /**
  * The tables of the JDBC stores. The same statements, with the default table prefix, are
- * available as {@code schema.sql} next to this class to create the tables with a schema
- * migration tool.
+ * available as {@code schema.sql} next to this class
+ * ({@code classpath:org/easyssf/receiver/jdbc/schema.sql}) to create the tables with a
+ * schema migration tool.
  */
 public final class JdbcSsfSchema {
 
@@ -17,6 +16,11 @@ public final class JdbcSsfSchema {
      * The default prefix of the table names.
      */
     public static final String DEFAULT_TABLE_PREFIX = "EASYSSF_";
+
+    /**
+     * Where the statements are, for messages.
+     */
+    public static final String SCHEMA_LOCATION = "classpath:org/easyssf/receiver/jdbc/schema.sql";
 
     private JdbcSsfSchema() {
     }
@@ -36,7 +40,7 @@ public final class JdbcSsfSchema {
     }
 
     private static String validPrefix(String tablePrefix) {
-        Assert.isTrue(tablePrefix != null && tablePrefix.matches("[A-Za-z0-9_.]*"),
+        SsfAssert.isTrue(tablePrefix != null && tablePrefix.matches("[A-Za-z0-9_.]*"),
                 "The table prefix may only consist of letters, digits, '_' and '.'");
         return tablePrefix;
     }
@@ -75,32 +79,25 @@ public final class JdbcSsfSchema {
 
     /**
      * Makes sure a table exists.
+     * @param jdbc runs the statements
      * @param table the name of the table
      * @param createStatements the statements that create it
      * @param create whether to create the table if it does not exist
+     * @param hint what else the application could do, appended to the message of the
+     * exception, may be {@code null}
      * @throws IllegalStateException if the table does not exist and is not to be created
      */
-    public static void prepareTable(JdbcOperations jdbc, String table, List<String> createStatements, boolean create) {
-        if (exists(jdbc, table)) {
+    public static void prepareTable(SsfJdbcOperations jdbc, String table, List<String> createStatements, boolean create,
+            String hint) {
+        if (jdbc.tableExists(table)) {
             return;
         }
         if (!create) {
             throw new IllegalStateException("The table " + table + " of the easyssf receiver does not exist. "
-                    + "Create it with the statements in classpath:org/easyssf/receiver/spring/boot/jdbc/schema.sql, "
-                    + "set easyssf.receiver.jdbc.initialize-schema=always to have it created on startup, "
-                    + "or set easyssf.receiver.jdbc.enabled=false to keep the state of the receiver in memory.");
+                    + "Create it with the statements in " + SCHEMA_LOCATION
+                    + ((hint != null && !hint.isBlank()) ? ", " + hint : "") + ".");
         }
         createStatements.forEach(jdbc::execute);
-    }
-
-    private static boolean exists(JdbcOperations jdbc, String table) {
-        try {
-            jdbc.queryForObject("SELECT COUNT(*) FROM " + table + " WHERE 1 = 0", Integer.class);
-            return true;
-        }
-        catch (BadSqlGrammarException ex) {
-            return false;
-        }
     }
 
 }

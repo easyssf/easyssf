@@ -4,14 +4,16 @@ import javax.sql.DataSource;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.easyssf.receiver.jdbc.JdbcSsfExpiringStore;
+import org.easyssf.receiver.jdbc.JdbcSsfJtiDedupStore;
+import org.easyssf.receiver.jdbc.JdbcSsfSchema;
+import org.easyssf.receiver.jdbc.JdbcSsfTokenRevocationStore;
+import org.easyssf.receiver.jdbc.SsfJdbcOperations;
 import org.easyssf.receiver.revocation.SsfTokenRevocationStore;
 import org.easyssf.receiver.set.SsfJtiDedupStore;
 import org.easyssf.receiver.spring.boot.SsfReceiverProperties;
-import org.easyssf.receiver.spring.boot.jdbc.JdbcSsfExpiringStore;
-import org.easyssf.receiver.spring.boot.jdbc.JdbcSsfJtiDedupStore;
-import org.easyssf.receiver.spring.boot.jdbc.JdbcSsfSchema;
-import org.easyssf.receiver.spring.boot.jdbc.JdbcSsfStoreCleanup;
-import org.easyssf.receiver.spring.boot.jdbc.JdbcSsfTokenRevocationStore;
+import org.easyssf.receiver.spring.boot.jdbc.JdbcSsfStoreCleanupLifecycle;
+import org.easyssf.receiver.spring.boot.jdbc.JdbcTemplateSsfJdbcOperations;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureOrder;
@@ -39,7 +41,7 @@ import org.springframework.jdbc.core.JdbcOperations;
         afterName = { "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration",
                 "org.springframework.boot.jdbc.autoconfigure.JdbcTemplateAutoConfiguration" })
 @AutoConfigureOrder(Ordered.LOWEST_PRECEDENCE)
-@ConditionalOnClass({ JdbcOperations.class, EmbeddedDatabaseConnection.class })
+@ConditionalOnClass({ JdbcOperations.class, EmbeddedDatabaseConnection.class, JdbcSsfJtiDedupStore.class })
 @ConditionalOnSingleCandidate(JdbcOperations.class)
 @ConditionalOnBooleanProperty(name = { "easyssf.receiver.enabled", "easyssf.receiver.jdbc.enabled" },
         matchIfMissing = true)
@@ -48,6 +50,9 @@ public final class SsfReceiverJdbcAutoConfiguration {
 
     private static final Log logger = LogFactory.getLog(SsfReceiverJdbcAutoConfiguration.class);
 
+    private static final String SCHEMA_HINT = "set easyssf.receiver.jdbc.initialize-schema=always to have it created "
+            + "on startup, or set easyssf.receiver.jdbc.enabled=false to keep the state of the receiver in memory";
+
     @Bean
     @ConditionalOnMissingBean(SsfJtiDedupStore.class)
     @ConditionalOnBooleanProperty(name = "easyssf.receiver.dedup.enabled", matchIfMissing = true)
@@ -55,9 +60,10 @@ public final class SsfReceiverJdbcAutoConfiguration {
             SsfReceiverProperties properties) {
         String tablePrefix = properties.getJdbc().getTablePrefix();
         String table = JdbcSsfSchema.processedSetTable(tablePrefix);
-        JdbcSsfSchema.prepareTable(jdbc, table, JdbcSsfSchema.createProcessedSetTable(tablePrefix),
-                createTables(properties, dataSource));
-        JdbcSsfJtiDedupStore store = new JdbcSsfJtiDedupStore(jdbc, tablePrefix);
+        SsfJdbcOperations operations = new JdbcTemplateSsfJdbcOperations(jdbc);
+        JdbcSsfSchema.prepareTable(operations, table, JdbcSsfSchema.createProcessedSetTable(tablePrefix),
+                createTables(properties, dataSource), SCHEMA_HINT);
+        JdbcSsfJtiDedupStore store = new JdbcSsfJtiDedupStore(operations, tablePrefix);
         store.setRetention(properties.getDedup().getRetention());
         logger.info("Processed SETs are remembered in the table " + table);
         return store;
@@ -73,10 +79,12 @@ public final class SsfReceiverJdbcAutoConfiguration {
             SsfReceiverProperties properties) {
         String tablePrefix = properties.getJdbc().getTablePrefix();
         String table = JdbcSsfSchema.revocationTable(tablePrefix);
-        JdbcSsfSchema.prepareTable(jdbc, table, JdbcSsfSchema.createRevocationTable(tablePrefix),
-                createTables(properties, dataSource));
+        SsfJdbcOperations operations = new JdbcTemplateSsfJdbcOperations(jdbc);
+        JdbcSsfSchema.prepareTable(operations, table, JdbcSsfSchema.createRevocationTable(tablePrefix),
+                createTables(properties, dataSource), SCHEMA_HINT);
         logger.info("Revoked sessions and subjects are kept in the table " + table);
-        return new JdbcSsfTokenRevocationStore(jdbc, tablePrefix, properties.getResourceServer().getRevocationTtl());
+        return new JdbcSsfTokenRevocationStore(operations, tablePrefix,
+                properties.getResourceServer().getRevocationTtl());
     }
 
     /**
@@ -85,9 +93,9 @@ public final class SsfReceiverJdbcAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
-    JdbcSsfStoreCleanup jdbcSsfStoreCleanup(ObjectProvider<JdbcSsfExpiringStore> stores,
+    JdbcSsfStoreCleanupLifecycle jdbcSsfStoreCleanup(ObjectProvider<JdbcSsfExpiringStore> stores,
             SsfReceiverProperties properties) {
-        JdbcSsfStoreCleanup cleanup = new JdbcSsfStoreCleanup(stores.orderedStream().toList(),
+        JdbcSsfStoreCleanupLifecycle cleanup = new JdbcSsfStoreCleanupLifecycle(stores.orderedStream().toList(),
                 properties.getJdbc().getCleanupInterval());
         if (cleanup.isEnabled()) {
             logger.info(
