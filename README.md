@@ -377,7 +377,8 @@ the state is kept in its database instead, without further configuration:
   [`schema.sql`](easyssf-receiver-jdbc/src/main/resources/org/easyssf/receiver/jdbc/schema.sql)
   (`classpath:org/easyssf/receiver/jdbc/schema.sql`), or set
   `easyssf.receiver.jdbc.initialize-schema=always`. If a table is missing the application fails on
-  startup and says so, rather than on the first event.
+  startup and says so, rather than on the first event. The stores use plain SQL (`VARCHAR`,
+  `BIGINT`, no vendor syntax) and are tested on H2 and PostgreSQL.
 - **Opting out**: `easyssf.receiver.jdbc.enabled=false` keeps the state in memory although the
   application has a database. Your own `SsfJtiDedupStore` or `SsfTokenRevocationStore` bean takes
   precedence in any case.

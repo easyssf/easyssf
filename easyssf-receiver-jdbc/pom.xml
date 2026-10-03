@@ -14,6 +14,9 @@
     <description>Database-backed stores of the Shared Signals Framework receiver, independent of any framework</description>
 
     <properties>
+        <!-- the tests tagged "database" start a database in Docker; the normal build skips them -->
+        <database.groups/>
+        <database.excludedGroups>database</database.excludedGroups>
         <automatic.module.name>org.easyssf.receiver.jdbc</automatic.module.name>
     </properties>
 
@@ -47,10 +50,29 @@
             <artifactId>logback-classic</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- the database tests, see the database-tests profile -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <groups>${database.groups}</groups>
+                    <excludedGroups>${database.excludedGroups}</excludedGroups>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -71,5 +93,16 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <!-- runs only the tests against real databases: ./mvnw -pl easyssf-receiver-jdbc -Pdatabase-tests verify -->
+            <id>database-tests</id>
+            <properties>
+                <database.groups>database</database.groups>
+                <database.excludedGroups/>
+            </properties>
+        </profile>
+    </profiles>
 
 </project>

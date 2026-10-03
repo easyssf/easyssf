@@ -56,6 +56,34 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  # The JDBC stores against PostgreSQL in Docker, see the database-tests profile of easyssf-receiver-jdbc.
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - name: Build the modules the stores need
+        run: ./mvnw -B --no-transfer-progress -DskipTests -pl easyssf-receiver-jdbc -am install
+
+      - name: Test the stores on PostgreSQL
+        run: ./mvnw -B --no-transfer-progress -pl easyssf-receiver-jdbc -Pdatabase-tests verify
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports-database
+          path: easyssf-receiver-jdbc/target/surefire-reports/*.xml
+          if-no-files-found: ignore
+          retention-days: 14
+
   # Publishes the snapshots of main to the Central snapshot repository once the tests pass. Off until
   # the repository variable PUBLISH_SNAPSHOTS is "true" (Settings > Secrets and variables > Actions).
   publish-snapshot:

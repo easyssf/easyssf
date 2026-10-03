@@ -30,6 +30,10 @@ exception.
 - **`.mvn/jvm.config`** silences the schema validator inside the CycloneDX plugin, which warns about
   keywords of the CycloneDX schema it does not know (`meta:enum`, `deprecated`) on every build. The file
   takes JVM arguments only, so this is where its one line is explained.
+- **Database tests**: the JDBC stores are tested on H2 by the normal build and on PostgreSQL in a
+  Testcontainers container by the tests tagged `database`, which the normal build excludes:
+  `./mvnw -pl easyssf-receiver-jdbc -Pdatabase-tests verify` runs them (Docker required). CI runs
+  them in the `database` job.
 - **Test logging**: `easyssf-receiver/src/test/resources/logback-test.xml` keeps the tests of the plain
   receiver at INFO; the expected failures of the negative tests are logged with their stack traces at
   DEBUG. The Spring Boot modules use Spring Boot's defaults.
@@ -46,6 +50,8 @@ GitHub Actions, see [`.github/workflows`](.github/workflows):
   passes `-Dbytebuddy.experimental=true` to the tests in case Mockito's Byte Buddy does not know the
   class file version yet. It is the normal build, so the conformance tests are not part of it. To run
   it for pull requests as well, enable the `pull_request` trigger in the file.
+- `ci.yml` also runs the database tests of `easyssf-receiver-jdbc` against PostgreSQL, in a job of
+  its own.
 - [`release.yml`](.github/workflows/release.yml) publishes a release, see below.
 - [`conformance.yml`](.github/workflows/conformance.yml) runs the four conformance plans against the
   suite, one job per plan, on demand. The suite and nginx images are the ones `ConformanceSettings` of
