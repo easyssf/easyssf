@@ -34,7 +34,7 @@ import static org.awaitility.Awaitility.await;
         "cts.transmitter.verify-hostname=true", "cts.delivery.method=poll", "cts.delivery.poll-interval=200ms",
         "cts.run.idle-timeout=2s", "cts.run.verification-timeout=5s", "cts.auth.client-id=" + TestTransmitter.CLIENT_ID,
         "cts.auth.client-secret=" + TestTransmitter.CLIENT_SECRET })
-class ConformanceRunTests {
+class ConformanceRunLocalTransmitterTests {
 
     private static final TestTransmitter transmitter = new TestTransmitter();
 
