@@ -38,6 +38,12 @@ public class SsfReceiverProperties {
     private URI transmitterJwksUrl;
 
     /**
+     * Whether the transmitter issuer and the endpoints it publishes may use plain 'http'
+     * on hosts other than loopback addresses. For test setups only, SSF requires 'https'.
+     */
+    private boolean allowInsecureHttp;
+
+    /**
      * Audience this receiver is known as at the transmitter. When set, every inbound SET
      * must contain it in its 'aud' claim.
      */
@@ -99,6 +105,14 @@ public class SsfReceiverProperties {
 
     public void setTransmitterMetadataUrl(URI transmitterMetadataUrl) {
         this.transmitterMetadataUrl = transmitterMetadataUrl;
+    }
+
+    public boolean isAllowInsecureHttp() {
+        return this.allowInsecureHttp;
+    }
+
+    public void setAllowInsecureHttp(boolean allowInsecureHttp) {
+        this.allowInsecureHttp = allowInsecureHttp;
     }
 
     public URI getTransmitterJwksUrl() {

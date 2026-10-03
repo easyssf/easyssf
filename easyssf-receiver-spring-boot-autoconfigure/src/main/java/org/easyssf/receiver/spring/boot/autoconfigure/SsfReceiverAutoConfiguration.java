@@ -1,7 +1,9 @@
 package org.easyssf.receiver.spring.boot.autoconfigure;
 
 import java.net.URI;
+import java.util.List;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -26,6 +28,7 @@ import org.easyssf.receiver.stream.SsfStreamVerification;
 import org.easyssf.receiver.transmitter.ClientCredentialsSsfTransmitterTokenProvider;
 import org.easyssf.receiver.transmitter.SsfTransmitterMetadataResolver;
 import org.easyssf.receiver.transmitter.SsfTransmitterTokenProvider;
+import org.easyssf.receiver.transmitter.SsfTransmitterUriPolicy;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureOrder;
@@ -77,9 +80,26 @@ public final class SsfReceiverAutoConfiguration {
     @ConditionalOnMissingBean
     SsfTransmitterMetadataResolver ssfTransmitterMetadataResolver(SsfReceiverProperties properties,
             SsfHttpClient httpClient) {
-        SsfTransmitterMetadataResolver resolver = new SsfTransmitterMetadataResolver(transmitterIssuer(properties),
-                properties.getTransmitterMetadataUrl(), httpClient);
+        SsfTransmitterMetadataResolver resolver;
+        try {
+            resolver = new SsfTransmitterMetadataResolver(transmitterIssuer(properties),
+                    properties.getTransmitterMetadataUrl(), httpClient, uriPolicy(properties));
+        }
+        catch (IllegalArgumentException ex) {
+            throw new InvalidConfigurationPropertyValueException("easyssf.receiver.transmitter-issuer",
+                    properties.getTransmitterIssuer(), ex.getMessage());
+        }
         logger.info("SSF transmitter metadata is resolved from " + resolver.getMetadataUris());
+        if (properties.isAllowInsecureHttp()) {
+            List<URI> insecure = Stream
+                .concat(Stream.of(URI.create(transmitterIssuer(properties)), properties.getTransmitterJwksUrl()),
+                        resolver.getMetadataUris().stream())
+                .filter(SsfTransmitterUriPolicy::isInsecure)
+                .filter((uri) -> !SsfTransmitterUriPolicy.isLoopback(uri))
+                .toList();
+            logger.warn("easyssf.receiver.allow-insecure-http is on, the SSF transmitter is used without TLS. "
+                    + "For development only" + (insecure.isEmpty() ? "." : ": " + insecure));
+        }
         return resolver;
     }
 
@@ -275,10 +295,21 @@ public final class SsfReceiverAutoConfiguration {
         return issuer;
     }
 
+    private static SsfTransmitterUriPolicy uriPolicy(SsfReceiverProperties properties) {
+        return properties.isAllowInsecureHttp() ? SsfTransmitterUriPolicy.INSECURE : SsfTransmitterUriPolicy.DEFAULT;
+    }
+
     private static Supplier<String> jwkSetUri(SsfReceiverProperties properties,
             SsfTransmitterMetadataResolver metadataResolver) {
         URI configured = properties.getTransmitterJwksUrl();
         if (configured != null) {
+            try {
+                uriPolicy(properties).checkEndpoint(configured, "The JWK Set URL");
+            }
+            catch (IllegalArgumentException ex) {
+                throw new InvalidConfigurationPropertyValueException("easyssf.receiver.transmitter-jwks-url",
+                        configured, ex.getMessage());
+            }
             return configured::toString;
         }
         return () -> {

@@ -369,9 +369,10 @@ poll. Switch it off with `management.health.easyssf.enabled=false`.
 | Property | Default | |
 |---|---|---|
 | `easyssf.receiver.enabled` | `true` | Switches the receiver off entirely when `false`. |
-| `easyssf.receiver.transmitter-issuer` | | Required. Issuer of the transmitter, must match `iss` of every SET. |
+| `easyssf.receiver.transmitter-issuer` | | Required. Issuer of the transmitter, must match `iss` of every SET. An `https` URL without query or fragment; `http` only on loopback addresses or with `allow-insecure-http`. |
 | `easyssf.receiver.transmitter-metadata-url` | derived | By default `<host>/.well-known/ssf-configuration<issuer-path>` (SSF 1.0, section 7.2), falling back to `<issuer>/.well-known/ssf-configuration`. |
 | `easyssf.receiver.transmitter-jwks-url` | from metadata | Skips metadata discovery when set. |
+| `easyssf.receiver.allow-insecure-http` | `false` | Accepts `http` for the transmitter issuer and the endpoints it publishes on any host, with a warning on startup. For development only. |
 | `easyssf.receiver.expected-audience` | | When set, every SET must contain it in `aud`. |
 | `easyssf.receiver.delivery-method` | `push` | `push` or `poll`. |
 | `easyssf.receiver.http.use-rest-client` | `true` | Call the transmitter with the `RestClient` of the application if it has a `RestClient.Builder`. |

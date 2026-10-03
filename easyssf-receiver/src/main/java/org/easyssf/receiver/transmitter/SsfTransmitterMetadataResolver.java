@@ -1,7 +1,7 @@
 package org.easyssf.receiver.transmitter;
 
 import java.net.URI;
-import java.util.Collections;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +35,10 @@ public class SsfTransmitterMetadataResolver {
 
     private final SsfHttpClient httpClient;
 
+    private final SsfTransmitterUriPolicy uriPolicy;
+
+    private volatile boolean warnedInsecure;
+
     private volatile SsfTransmitterMetadata metadata;
 
     /**
@@ -44,11 +48,31 @@ public class SsfTransmitterMetadataResolver {
      * @param httpClient used to fetch the metadata
      */
     public SsfTransmitterMetadataResolver(String issuer, URI metadataUri, SsfHttpClient httpClient) {
+        this(issuer, metadataUri, httpClient, SsfTransmitterUriPolicy.DEFAULT);
+    }
+
+    /**
+     * @param issuer the issuer of the transmitter
+     * @param metadataUri where the metadata is, {@code null} to derive it from the issuer
+     * @param httpClient retrieves the metadata
+     * @param uriPolicy what the issuer and the endpoints of the transmitter must look
+     * like
+     * @throws IllegalArgumentException if the issuer or the metadata URI is not
+     * acceptable
+     */
+    public SsfTransmitterMetadataResolver(String issuer, URI metadataUri, SsfHttpClient httpClient,
+            SsfTransmitterUriPolicy uriPolicy) {
         SsfAssert.hasText(issuer, "issuer must not be empty");
         SsfAssert.notNull(httpClient, "httpClient must not be null");
+        SsfAssert.notNull(uriPolicy, "uriPolicy must not be null");
+        uriPolicy.checkIssuer(issuer);
+        if (metadataUri != null) {
+            uriPolicy.checkEndpoint(metadataUri, "Transmitter metadata URL");
+        }
         this.issuer = issuer;
         this.metadataUris = (metadataUri != null) ? List.of(metadataUri) : deriveMetadataUris(issuer);
         this.httpClient = httpClient;
+        this.uriPolicy = uriPolicy;
     }
 
     /**
@@ -116,7 +140,37 @@ public class SsfTransmitterMetadataResolver {
                     + "' does not match the configured transmitter issuer '" + this.issuer + "'");
         }
         URI jwksUri = (claims.get("jwks_uri") instanceof String value) ? URI.create(value) : null;
-        return new SsfTransmitterMetadata(this.issuer, jwksUri, Collections.unmodifiableMap(claims));
+        SsfTransmitterMetadata metadata = new SsfTransmitterMetadata(this.issuer, jwksUri, claims);
+        checkEndpoints(metadata);
+        return metadata;
+    }
+
+    /**
+     * The metadata controls where keys and stream operations come from, so its endpoints
+     * are held to the same standard as the issuer.
+     */
+    private void checkEndpoints(SsfTransmitterMetadata metadata) {
+        List<String> insecure = new ArrayList<>();
+        check(metadata.jwksUri(), "jwks_uri", insecure);
+        check(metadata.configurationEndpoint(), "configuration_endpoint", insecure);
+        check(metadata.statusEndpoint(), "status_endpoint", insecure);
+        check(metadata.addSubjectEndpoint(), "add_subject_endpoint", insecure);
+        check(metadata.removeSubjectEndpoint(), "remove_subject_endpoint", insecure);
+        check(metadata.verificationEndpoint(), "verification_endpoint", insecure);
+        if (!insecure.isEmpty() && this.uriPolicy.allowInsecureHttp() && !this.warnedInsecure) {
+            this.warnedInsecure = true;
+            logger.warn("The SSF transmitter " + this.issuer + " publishes endpoints without TLS, accepted because "
+                    + "insecure http is allowed. For development only: " + insecure);
+        }
+    }
+
+    private void check(URI endpoint, String name, List<String> insecure) {
+        if (endpoint != null) {
+            this.uriPolicy.checkEndpoint(endpoint, "SSF transmitter metadata " + name);
+            if (SsfTransmitterUriPolicy.isInsecure(endpoint) && !SsfTransmitterUriPolicy.isLoopback(endpoint)) {
+                insecure.add(name + " " + endpoint);
+            }
+        }
     }
 
     /**
