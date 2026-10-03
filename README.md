@@ -80,6 +80,18 @@ Most of this document describes the Spring Boot starter. For other environments 
 </dependency>
 ```
 
+There is no release yet. The snapshots of `main` are on the Maven Central snapshot repository,
+which a build has to enable:
+
+```xml
+<repository>
+    <id>central-snapshots</id>
+    <url>https://central.sonatype.com/repository/maven-snapshots/</url>
+    <releases><enabled>false</enabled></releases>
+    <snapshots><enabled>true</enabled></snapshots>
+</repository>
+```
+
 ```yaml
 easyssf:
   receiver:
