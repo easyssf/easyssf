@@ -27,7 +27,7 @@ import com.nimbusds.jose.util.JSONObjectUtils;
  */
 public class ClientCredentialsSsfTransmitterTokenProvider implements SsfTransmitterTokenProvider {
 
-    private static final Duration EXPIRY_SAFETY_WINDOW = Duration.ofSeconds(30);
+    private static final Duration DEFAULT_EXPIRY_SAFETY_WINDOW = Duration.ofSeconds(30);
 
     private final SsfHttpClient httpClient;
 
@@ -48,6 +48,10 @@ public class ClientCredentialsSsfTransmitterTokenProvider implements SsfTransmit
     private String accessToken;
 
     private Instant expiresAt = Instant.MIN;
+
+    private Duration expirySafetyWindow = DEFAULT_EXPIRY_SAFETY_WINDOW;
+
+    private Map<String, String> additionalParameters = Map.of();
 
     public ClientCredentialsSsfTransmitterTokenProvider(SsfHttpClient httpClient, URI tokenUri, String clientId,
             String clientSecret) {
@@ -72,6 +76,25 @@ public class ClientCredentialsSsfTransmitterTokenProvider implements SsfTransmit
      */
     public void setAuthenticateWithRequestBody(boolean authenticateWithRequestBody) {
         this.authenticateWithRequestBody = authenticateWithRequestBody;
+    }
+
+    /**
+     * @param expirySafetyWindow how long before its expiry a token is renewed, 30 seconds
+     * by default; never more than a quarter of the token's lifetime
+     */
+    public void setExpirySafetyWindow(Duration expirySafetyWindow) {
+        SsfAssert.isTrue(expirySafetyWindow != null && !expirySafetyWindow.isNegative(),
+                "expirySafetyWindow must not be negative");
+        this.expirySafetyWindow = expirySafetyWindow;
+    }
+
+    /**
+     * @param additionalParameters form parameters to send with the token request in
+     * addition to the grant, for extensions of the token endpoint
+     */
+    public void setAdditionalParameters(Map<String, String> additionalParameters) {
+        SsfAssert.notNull(additionalParameters, "additionalParameters must not be null");
+        this.additionalParameters = Map.copyOf(additionalParameters);
     }
 
     public void setClock(Clock clock) {
@@ -112,6 +135,7 @@ public class ClientCredentialsSsfTransmitterTokenProvider implements SsfTransmit
         if (!this.scopes.isEmpty()) {
             form.put("scope", String.join(" ", this.scopes));
         }
+        this.additionalParameters.forEach(form::putIfAbsent);
         SsfHttpRequest request = SsfHttpRequest.of("POST", this.tokenUri).withHeader("Accept", "application/json");
         if (this.authenticateWithRequestBody) {
             form.put("client_id", this.clientId);
@@ -148,7 +172,7 @@ public class ClientCredentialsSsfTransmitterTokenProvider implements SsfTransmit
         this.accessToken = token;
         // renew ahead of the expiry, but still use a short-lived token for most of its
         // lifetime
-        Duration safetyWindow = Duration.ofSeconds(Math.min(EXPIRY_SAFETY_WINDOW.toSeconds(), expiresIn / 4));
+        Duration safetyWindow = Duration.ofSeconds(Math.min(this.expirySafetyWindow.toSeconds(), expiresIn / 4));
         this.expiresAt = this.clock.instant().plusSeconds(expiresIn).minus(safetyWindow);
     }
 

@@ -139,6 +139,8 @@ public final class SsfTransmitterFactory {
         tokenProvider.setScopes(oauth2.getScopes());
         tokenProvider.setAuthenticateWithRequestBody(oauth2
             .getClientAuthenticationMethod() == SsfTransmitterProperties.Oauth2.ClientAuthenticationMethod.POST);
+        tokenProvider.setExpirySafetyWindow(oauth2.getExpirySafetyWindow());
+        tokenProvider.setAdditionalParameters(oauth2.getAdditionalParameters());
         return tokenProvider;
     }
 
@@ -188,6 +190,8 @@ public final class SsfTransmitterFactory {
         poller.setInterval(poll.getInterval());
         poller.setInitialDelay(poll.getInitialDelay());
         poller.setMaxEvents(poll.getMaxEvents());
+        poller.setRateLimitFallback(poll.getRateLimit().getFallbackBackoff());
+        poller.setMaxPause(poll.getRateLimit().getMaxBackoff());
         return poller;
     }
 

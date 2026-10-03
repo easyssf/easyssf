@@ -2,6 +2,8 @@ package org.easyssf.receiver.spring.boot.autoconfigure;
 
 import org.easyssf.receiver.metrics.MicrometerSsfReceiverMetrics;
 import org.easyssf.receiver.metrics.SsfReceiverMetrics;
+import org.easyssf.receiver.transmitter.SsfTransmitters;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureOrder;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -30,8 +32,15 @@ public final class SsfReceiverMetricsAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(SsfReceiverMetrics.class)
     @ConditionalOnBooleanProperty(name = "easyssf.receiver.metrics.enabled", matchIfMissing = true)
-    MicrometerSsfReceiverMetrics ssfReceiverMetrics(MeterRegistry meterRegistry) {
-        return new MicrometerSsfReceiverMetrics(meterRegistry);
+    MicrometerSsfReceiverMetrics ssfReceiverMetrics(MeterRegistry meterRegistry,
+            ObjectProvider<SsfTransmitters> transmitters) {
+        MicrometerSsfReceiverMetrics metrics = new MicrometerSsfReceiverMetrics(meterRegistry);
+        // the transmitters are built after the metrics, so they are looked up per meter
+        metrics.setTransmitterLabels((issuer) -> {
+            SsfTransmitters registry = transmitters.getIfAvailable();
+            return (registry != null) ? registry.nameOf(issuer) : issuer;
+        });
+        return metrics;
     }
 
 }

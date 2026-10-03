@@ -41,7 +41,7 @@ public class SsfPoller {
 
     private static final Logger logger = LoggerFactory.getLogger(SsfPoller.class);
 
-    private static final Duration MAX_RETRY_AFTER = Duration.ofMinutes(5);
+    private static final Duration DEFAULT_MAX_PAUSE = Duration.ofMinutes(5);
 
     private static final int MAX_REQUESTS_PER_POLL = 100;
 
@@ -66,6 +66,10 @@ public class SsfPoller {
     private int maxEvents = 100;
 
     private String transmitter;
+
+    private Duration rateLimitFallback;
+
+    private Duration maxPause = DEFAULT_MAX_PAUSE;
 
     private volatile Instant pausedUntil = Instant.MIN;
 
@@ -120,6 +124,26 @@ public class SsfPoller {
      */
     public void setTransmitter(String transmitter) {
         this.transmitter = transmitter;
+    }
+
+    /**
+     * @param rateLimitFallback how long to pause polling after a {@code 429 Too Many
+     * Requests} without a {@code Retry-After} header; {@code null}, the default, to poll
+     * again at the regular interval
+     */
+    public void setRateLimitFallback(Duration rateLimitFallback) {
+        SsfAssert.isTrue(rateLimitFallback == null || !rateLimitFallback.isNegative(),
+                "rateLimitFallback must not be negative");
+        this.rateLimitFallback = rateLimitFallback;
+    }
+
+    /**
+     * @param maxPause the longest pause a {@code Retry-After} header or the rate limit
+     * fallback can cause, 5 minutes by default
+     */
+    public void setMaxPause(Duration maxPause) {
+        SsfAssert.isTrue(maxPause != null && maxPause.isPositive(), "maxPause must be positive");
+        this.maxPause = maxPause;
     }
 
     public void setMaxEvents(int maxEvents) {
@@ -320,14 +344,20 @@ public class SsfPoller {
     private void pauseIfAsked(SsfHttpResponse response) {
         int status = response.status();
         String retryAfter = response.header("Retry-After");
+        Duration pause = null;
         if ((status == 429 || status == 503) && retryAfter != null) {
             try {
-                Duration pause = Duration.ofSeconds(Long.parseLong(retryAfter.trim()));
-                this.pausedUntil = Instant.now().plus((pause.compareTo(MAX_RETRY_AFTER) < 0) ? pause : MAX_RETRY_AFTER);
+                pause = Duration.ofSeconds(Long.parseLong(retryAfter.trim()));
             }
             catch (NumberFormatException invalid) {
-                // a date instead of seconds: fall back to the regular interval
+                // a date instead of seconds: treated like no header
             }
+        }
+        if (pause == null && status == 429) {
+            pause = this.rateLimitFallback;
+        }
+        if (pause != null) {
+            this.pausedUntil = Instant.now().plus((pause.compareTo(this.maxPause) < 0) ? pause : this.maxPause);
         }
     }
 

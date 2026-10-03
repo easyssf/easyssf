@@ -2,6 +2,7 @@ package org.easyssf.receiver.metrics;
 
 import java.time.Duration;
 import java.util.Locale;
+import java.util.function.Function;
 
 import org.easyssf.core.SsfDeliveryMethod;
 import org.easyssf.core.event.SsfEventTypes;
@@ -27,6 +28,8 @@ import io.micrometer.core.instrument.Timer;
 public class MicrometerSsfReceiverMetrics implements SsfReceiverMetrics {
 
     private final MeterRegistry meterRegistry;
+
+    private Function<String, String> transmitterLabels = (issuer) -> issuer;
 
     public MicrometerSsfReceiverMetrics(MeterRegistry meterRegistry) {
         SsfAssert.notNull(meterRegistry, "meterRegistry must not be null");
@@ -80,8 +83,19 @@ public class MicrometerSsfReceiverMetrics implements SsfReceiverMetrics {
             .record(duration);
     }
 
-    private static String transmitter(String issuer) {
-        return (issuer != null) ? issuer : "unknown";
+    /**
+     * @param transmitterLabels the value of the {@code transmitter} tag for the issuer of
+     * a transmitter, for example its name, as issuers are long; the issuer itself by
+     * default. See {@code SsfTransmitters.nameOf}.
+     */
+    public void setTransmitterLabels(Function<String, String> transmitterLabels) {
+        SsfAssert.notNull(transmitterLabels, "transmitterLabels must not be null");
+        this.transmitterLabels = transmitterLabels;
+    }
+
+    private String transmitter(String issuer) {
+        String label = (issuer != null) ? this.transmitterLabels.apply(issuer) : null;
+        return (label != null) ? label : "unknown";
     }
 
     private static String tag(Enum<?> value) {

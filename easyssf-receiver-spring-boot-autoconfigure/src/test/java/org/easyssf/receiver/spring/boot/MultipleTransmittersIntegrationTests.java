@@ -141,7 +141,7 @@ class MultipleTransmittersIntegrationTests {
         await().atMost(Duration.ofSeconds(5)).until(() -> okta.acknowledgedSets().contains(set.getJWTID()));
         assertThat(this.handledSets).contains(okta.issuer() + " session-okta");
         assertThat(this.meterRegistry.get("easyssf.receiver.sets")
-            .tags("transmitter", okta.issuer(), "delivery", "poll", "outcome", "handled")
+            .tags("transmitter", "okta", "delivery", "poll", "outcome", "handled")
             .counter()
             .count()).isGreaterThanOrEqualTo(1);
     }

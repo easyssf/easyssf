@@ -247,7 +247,9 @@ easyssf:
 - A SET is acknowledged after it was handled. An invalid SET is reported to the transmitter (`setErrs`).
   A SET that could not be handled is neither acknowledged nor reported and is delivered again.
 - If more SETs are available than `poll.max-events`, they are fetched right away.
-- `429` / `503` responses with a `Retry-After` header (in seconds) pause the polling.
+- `429` / `503` responses with a `Retry-After` header (in seconds) pause the polling, for at most
+  `easyssf.receiver.poll.rate-limit.max-backoff` (5 minutes). A `429` without the header pauses for
+  `easyssf.receiver.poll.rate-limit.fallback-backoff`, if set.
 - With `easyssf.receiver.poll.auto-startup=false` nothing is polled until you call `SsfPoller.pollNow()`.
 - Long polling is not used, requests always ask the transmitter to return immediately.
 
@@ -338,8 +340,8 @@ easyssf:
   beans customize transmitters before they are built. Only named transmitters, without a default one,
   are fine as well.
 - Handlers see the issuer in `eventContext.eventToken().iss()`. Revocations and sessions are scoped
-  to the issuer anyway. The metrics carry a `transmitter` tag with the issuer, and the health
-  indicator lists every transmitter under its name.
+  to the issuer anyway. The metrics carry a `transmitter` tag with the name of the transmitter, and
+  the health indicator lists every transmitter under its name.
 - Dedup, the database, metrics, HTTP timeouts, the push endpoint path and the resource server and
   OIDC client integrations are shared by all transmitters.
 
@@ -413,7 +415,7 @@ If the application has a Micrometer `MeterRegistry` (for example with
 
 | Meter | Type | Tags |
 |---|---|---|
-| `easyssf.receiver.sets` | counter | `transmitter` (the issuer), `delivery` (`push`, `poll`), `outcome` (`handled`, `duplicate`, `invalid`, `unauthenticated`, `unavailable`, `failed`) |
+| `easyssf.receiver.sets` | counter | `transmitter` (the name of the transmitter, `default` for the one at `easyssf.receiver.*`), `delivery` (`push`, `poll`), `outcome` (`handled`, `duplicate`, `invalid`, `unauthenticated`, `unavailable`, `failed`) |
 | `easyssf.receiver.events` | counter | `transmitter`, `delivery`, `event` (for example `CaepSessionRevoked`) |
 | `easyssf.receiver.poll` | timer | `transmitter`, `outcome` (`success`, `failure`) |
 
@@ -456,6 +458,8 @@ name, with its own status. Switch it off with `management.health.easyssf.enabled
 | `easyssf.receiver.oauth2.client-id` / `client-secret` | | |
 | `easyssf.receiver.oauth2.scopes` | | |
 | `easyssf.receiver.oauth2.client-authentication-method` | `basic` | `basic` or `post`. |
+| `easyssf.receiver.oauth2.expiry-safety-window` | `30s` | How long before its expiry an access token is renewed, at most a quarter of its lifetime. |
+| `easyssf.receiver.oauth2.additional-parameters.*` | | Form parameters sent with the token request in addition to the grant. |
 | `easyssf.receiver.stream.management` | `transmitter` | `receiver` makes the application create or update its stream on startup. |
 | `easyssf.receiver.stream.id` | | Stream created at the transmitter, looked up on startup. |
 | `easyssf.receiver.stream.events-requested` | `CaepSessionRevoked`, `CaepCredentialChange` | For a stream managed by the receiver. |
@@ -466,6 +470,8 @@ name, with its own status. Switch it off with `management.health.easyssf.enabled
 | `easyssf.receiver.poll.interval` | `30s` | |
 | `easyssf.receiver.poll.initial-delay` | `1s` | |
 | `easyssf.receiver.poll.max-events` | `100` | SETs per request. |
+| `easyssf.receiver.poll.rate-limit.fallback-backoff` | | Pause after a `429` without `Retry-After`; unset, the next poll comes at the regular interval. |
+| `easyssf.receiver.poll.rate-limit.max-backoff` | `5m` | Longest pause a `Retry-After` header or the fallback can cause. |
 | `easyssf.receiver.metrics.enabled` | `true` | |
 | `easyssf.receiver.set-validation.accepted-algorithms` | `RS256` | JWS algorithms accepted for SETs. |
 | `easyssf.receiver.set-validation.min-rsa-key-size` | `2048` | `0` disables the check. |

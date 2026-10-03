@@ -107,7 +107,7 @@ class PollDeliveryIntegrationTests {
         await().atMost(Duration.ofSeconds(5)).until(() -> api(accessToken) == 401);
         await().atMost(Duration.ofSeconds(5)).until(() -> transmitter.acknowledgedSets().contains(set.getJWTID()));
         assertThat(this.meterRegistry.get("easyssf.receiver.sets")
-            .tags("delivery", "poll", "outcome", "handled")
+            .tags("transmitter", "default", "delivery", "poll", "outcome", "handled")
             .counter()
             .count()).isGreaterThanOrEqualTo(1);
         assertThat(

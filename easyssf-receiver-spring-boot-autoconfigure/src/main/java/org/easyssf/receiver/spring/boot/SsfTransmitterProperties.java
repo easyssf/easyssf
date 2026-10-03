@@ -3,7 +3,9 @@ package org.easyssf.receiver.spring.boot;
 import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.easyssf.core.SsfDeliveryMethod;
 
@@ -174,6 +176,18 @@ public class SsfTransmitterProperties {
          */
         private ClientAuthenticationMethod clientAuthenticationMethod = ClientAuthenticationMethod.BASIC;
 
+        /**
+         * How long before its expiry an access token is renewed; never more than a
+         * quarter of the token's lifetime.
+         */
+        private Duration expirySafetyWindow = Duration.ofSeconds(30);
+
+        /**
+         * Form parameters to send with the token request in addition to the grant, for
+         * extensions of the token endpoint.
+         */
+        private final Map<String, String> additionalParameters = new LinkedHashMap<>();
+
         public URI getTokenUri() {
             return this.tokenUri;
         }
@@ -212,6 +226,18 @@ public class SsfTransmitterProperties {
 
         public void setClientAuthenticationMethod(ClientAuthenticationMethod clientAuthenticationMethod) {
             this.clientAuthenticationMethod = clientAuthenticationMethod;
+        }
+
+        public Duration getExpirySafetyWindow() {
+            return this.expirySafetyWindow;
+        }
+
+        public void setExpirySafetyWindow(Duration expirySafetyWindow) {
+            this.expirySafetyWindow = expirySafetyWindow;
+        }
+
+        public Map<String, String> getAdditionalParameters() {
+            return this.additionalParameters;
         }
 
         public enum ClientAuthenticationMethod {
@@ -336,6 +362,8 @@ public class SsfTransmitterProperties {
          */
         private int maxEvents = 100;
 
+        private final RateLimit rateLimit = new RateLimit();
+
         public URI getEndpointUrl() {
             return this.endpointUrl;
         }
@@ -374,6 +402,44 @@ public class SsfTransmitterProperties {
 
         public void setMaxEvents(int maxEvents) {
             this.maxEvents = maxEvents;
+        }
+
+        public RateLimit getRateLimit() {
+            return this.rateLimit;
+        }
+
+        /**
+         * How the poller reacts when the transmitter rate-limits the poll endpoint.
+         */
+        public static class RateLimit {
+
+            /**
+             * Pause after a '429 Too Many Requests' without a 'Retry-After' header. Not
+             * set: poll again at the regular interval.
+             */
+            private Duration fallbackBackoff;
+
+            /**
+             * Longest pause a 'Retry-After' header or the fallback can cause.
+             */
+            private Duration maxBackoff = Duration.ofMinutes(5);
+
+            public Duration getFallbackBackoff() {
+                return this.fallbackBackoff;
+            }
+
+            public void setFallbackBackoff(Duration fallbackBackoff) {
+                this.fallbackBackoff = fallbackBackoff;
+            }
+
+            public Duration getMaxBackoff() {
+                return this.maxBackoff;
+            }
+
+            public void setMaxBackoff(Duration maxBackoff) {
+                this.maxBackoff = maxBackoff;
+            }
+
         }
 
     }

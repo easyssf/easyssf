@@ -68,6 +68,17 @@ public final class SsfTransmitters {
     }
 
     /**
+     * The short name of a transmitter, for labels such as metric tags, where its issuer
+     * would be long.
+     * @return the name of the transmitter with the given issuer, or the issuer itself if
+     * no transmitter has it
+     */
+    public String nameOf(String issuer) {
+        SsfTransmitter transmitter = (issuer != null) ? this.byIssuer.get(issuer) : null;
+        return (transmitter != null) ? transmitter.getName() : issuer;
+    }
+
+    /**
      * @return a verifier that verifies the SETs of every transmitter, by issuer
      */
     public SsfSetVerifier verifier() {
