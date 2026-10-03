@@ -38,6 +38,7 @@ GitHub Actions, see [`.github/workflows`](.github/workflows):
   passes `-Dbytebuddy.experimental=true` to the tests in case Mockito's Byte Buddy does not know the
   class file version yet. It is the normal build, so the conformance tests are not part of it. To run
   it for pull requests as well, enable the `pull_request` trigger in the file.
+- [`release.yml`](.github/workflows/release.yml) publishes a release, see below.
 - [`conformance.yml`](.github/workflows/conformance.yml) runs the four conformance plans against the
   suite, one job per plan, on demand. The suite and nginx images are the ones `ConformanceSettings` of
   `easyssf-receiver-spring-boot-conformance-tests` names, the single place to change them (the suite's `latest` build until
@@ -45,3 +46,38 @@ GitHub Actions, see [`.github/workflows`](.github/workflows):
   images. Once a suite release contains the fix
   for the poll race of `release-v5.3.1`, pin that release and enable the `schedule` trigger for a
   nightly run.
+
+## Releasing
+
+Releases go to [Maven Central](https://central.sonatype.com) under the namespace `org.easyssf`. The
+`release` profile of the root POM builds what Central requires: sources and javadoc jars, GPG
+signatures for every file, and `deploy` uploads the whole build as one deployment through the
+[`central-publishing-maven-plugin`](https://central.sonatype.org/publish/publish-portal-maven/),
+which waits until Central has validated and published it. The parent POM, the examples and the
+conformance tests (`maven.deploy.skip`) are built but not published.
+
+The workflow needs four repository secrets: `CENTRAL_USERNAME` and `CENTRAL_PASSWORD`, a user token
+generated on the portal (account menu, "Generate User Token"), and `GPG_PRIVATE_KEY` and
+`GPG_PASSPHRASE`, the ASCII-armored private key of `oss@easyssf.org` and its
+passphrase. The public key is on `keys.openpgp.org` and `keyserver.ubuntu.com`.
+
+To release version `X.Y.Z` from `main`:
+
+1. Set the version in every POM and in the README and website snippets, and update
+   `project.build.outputTimestamp` in the root POM to the release date:
+   `./mvnw versions:set -DnewVersion=X.Y.Z -DgenerateBackupPoms=false`.
+2. Commit, tag `vX.Y.Z` and push the tag: `git tag -s vX.Y.Z -m "X.Y.Z" && git push origin vX.Y.Z`.
+   The workflow checks that the tag matches the POM version, runs the tests, signs, publishes, and
+   creates the GitHub release with generated notes and the SBOMs attached. The artifacts are on
+   Central a few minutes after the workflow finishes; search indexes them within hours.
+3. Set the next development version, `./mvnw versions:set -DnewVersion=X.Y+1.0-SNAPSHOT
+   -DgenerateBackupPoms=false`, commit and push.
+
+Snapshots of `main` are published by `ci.yml` to the
+[Central snapshot repository](https://central.sonatype.com/repository/maven-snapshots/) while the
+repository variable `PUBLISH_SNAPSHOTS` is `true`. Consumers add that repository with
+`<snapshots><enabled>true</enabled></snapshots>`.
+
+To try the release build locally without signing or uploading:
+`./mvnw -Prelease -Dgpg.skip verify`. With the key in the local keyring, set `MAVEN_GPG_PASSPHRASE`
+to sign as well; the passphrase never goes on the command line.

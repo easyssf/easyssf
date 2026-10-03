@@ -21,6 +21,20 @@ You will get an acknowledgement, usually within a few days, and we will keep you
 report is being handled. We ask for the time to prepare a fix and a release before details are
 published, and we credit reporters in the advisory unless they prefer not to be named.
 
+## Verifying releases
+
+Releases on Maven Central are signed with the project key of `oss@easyssf.org`. Its fingerprint is
+
+    D2EB 5809 412F 0736 EAB0  4364 67E5 225A 7779 80D7
+
+The public key is on `keys.openpgp.org` and `keyserver.ubuntu.com`:
+
+    gpg --keyserver hkps://keys.openpgp.org --recv-keys D2EB5809412F0736EAB0436467E5225A777980D7
+    gpg --verify easyssf-core-<version>.jar.asc easyssf-core-<version>.jar
+
+Every file of a release is signed, and every jar comes with an SBOM in CycloneDX format, attached
+with the classifier `cyclonedx`.
+
 ## Supported versions
 
 easyssf is experimental and has no releases yet. Until 1.0, only the latest release receives

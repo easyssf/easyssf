@@ -55,3 +55,31 @@ jobs:
           path: '**/target/surefire-reports/*.xml'
           if-no-files-found: ignore
           retention-days: 14
+
+  # Publishes the snapshots of main to the Central snapshot repository once the tests pass. Off until
+  # the repository variable PUBLISH_SNAPSHOTS is "true" (Settings > Secrets and variables > Actions).
+  publish-snapshot:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.PUBLISH_SNAPSHOTS == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+          server-id: central
+          server-username: CENTRAL_USERNAME
+          server-password: CENTRAL_PASSWORD
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Publish snapshots
+        run: ./mvnw -B --no-transfer-progress -Prelease -DskipTests deploy
+        env:
+          CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
+          CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
