@@ -108,6 +108,11 @@ public final class ConformanceSuite implements AutoCloseable {
             .withEnv("BASE_URL", baseUri.toString())
             .withEnv("BASE_MTLS_URL", baseUri.toString())
             .withEnv("MONGODB_HOST", "mongodb")
+            // The suite pins MongoDB's feature compatibility version to the one it runs
+            // in production (6.0) and refuses to start otherwise. The tests run a current
+            // MongoDB, so the suite is told not to touch the version (an empty target
+            // skips the step).
+            .withEnv("OPENID_MONGODB_TARGETFEATURECOMPATIBILITYVERSION", "")
             // the 'dev' profile needs no login
             .withEnv("SPRING_PROFILES_ACTIVE", "dev")
             .withEnv("OIDC_GOOGLE_CLIENTID", "google-client")

@@ -51,22 +51,19 @@ reaches the receiver on the Docker host as `host.testcontainers.internal`.
 
 | System property / environment variable | Default | |
 |---|---|---|
-| `cts.suite.image` / `CTS_SUITE_IMAGE` | `registry.gitlab.com/openid/conformance-suite:release-v5.3.1` | the suite image |
-| `cts.suite.nginx-image` | `registry.gitlab.com/openid/conformance-suite/nginx:release-v5.3.1` | its nginx image |
-| `cts.suite.mongodb-image` | `mongo:6.0.13` | its MongoDB image |
+| `cts.suite.image` / `CTS_SUITE_IMAGE` | `registry.gitlab.com/openid/conformance-suite:latest` (the suite's current master build, see below) | the suite image |
+| `cts.suite.nginx-image` | `registry.gitlab.com/openid/conformance-suite/nginx:latest` | its nginx image |
+| `cts.suite.mongodb-image` | `mongo@sha256:…` (`9.0.2-noble`, pinned by digest; the suite itself runs 6.0.13 in production) | its MongoDB image |
 | `cts.suite.port` | `18443` | host port of the Testcontainers-started suite |
 | `cts.receiver.port` | `9444` | port of the receiver under test |
 | `cts.receiver.push-url` | `https://<host as seen from the suite>:<receiver port>/ssf/push` | the push URL the receiver registers |
 
 The properties can be given to Maven (`-Dcts.suite.image=...`), which passes them on to the tests.
 
-**Newer suite than the released image.** The released `release-v5.3.1` has 5 modules in the CAEP
-interop plan and 6 in the default plan, and its emulated transmitter has a race between concurrent
-requests (`incoming_request` is unmapped by one request under another, which ends the module with a
-`NullPointerException` in `OIDSSFHandleAuthorizationHeader`); with poll delivery, where the poller's
-requests overlap with the stream operations, most modules hit it. The suite's `master` fixes the
-race (`15710390b`, "map incoming_request only while the test lock is held") and has 12 modules in the
-CAEP interop plan and 15 in the default plan. Until a release contains that, build the image from a
+**Which suite.** The tests run the suite's current `latest` build to work around issues in the SSF
+tests of the last release (`release-v5.3.1`: fewer modules, and a race in its emulated transmitter
+that fails most poll modules). Once a release contains the fixes, `ConformanceSettings` pins it by
+digest, the single place to change the images. To run a build of your own, build the image from a
 checkout like the suite's CI does (`.gitlab-ci.yml`, job `build-image`: `mvn package`, then
 `docker build -t conformance-suite .`) and name it; Testcontainers uses images of the local Docker
 daemon as they are:

@@ -1,5 +1,5 @@
 # Keeps the Maven dependencies and the GitHub Actions current. The conformance suite images are
-# pinned by digest in .github/workflows/conformance.yml and are not covered: check the registry
+# named in easyssf-tests-conformance's ConformanceSettings and are not covered: check the registry
 # for a new release by hand.
 version: 2
 updates:

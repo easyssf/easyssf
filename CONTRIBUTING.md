@@ -39,7 +39,9 @@ GitHub Actions, see [`.github/workflows`](.github/workflows):
   class file version yet. It is the normal build, so the conformance tests are not part of it. To run
   it for pull requests as well, enable the `pull_request` trigger in the file.
 - [`conformance.yml`](.github/workflows/conformance.yml) runs the four conformance plans against the
-  suite, one job per plan, on demand. The suite and nginx images are pinned by digest in the
-  workflow (`release-v5.3.1`), a run can name other images. Once a suite release contains the fix
+  suite, one job per plan, on demand. The suite and nginx images are the ones `ConformanceSettings` of
+  `easyssf-tests-conformance` names, the single place to change them (the suite's `latest` build until
+  a release contains the SSF test fixes, then that release pinned by digest); a run can name other
+  images. Once a suite release contains the fix
   for the poll race of `release-v5.3.1`, pin that release and enable the `schedule` trigger for a
   nightly run.
