@@ -67,6 +67,7 @@
         <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
         <spotless-maven-plugin.version>2.44.5</spotless-maven-plugin.version>
         <flatten-maven-plugin.version>1.8.0</flatten-maven-plugin.version>
+        <cyclonedx-maven-plugin.version>2.9.3</cyclonedx-maven-plugin.version>
     </properties>
 
     <dependencyManagement>
@@ -191,6 +192,26 @@
                     </executions>
                 </plugin>
                 <plugin>
+                    <!-- a CycloneDX SBOM (target/bom.json) for every module, attached to the artifact -->
+                    <groupId>org.cyclonedx</groupId>
+                    <artifactId>cyclonedx-maven-plugin</artifactId>
+                    <version>${cyclonedx-maven-plugin.version}</version>
+                    <configuration>
+                        <outputFormat>json</outputFormat>
+                        <projectType>library</projectType>
+                        <includeTestScope>false</includeTestScope>
+                    </configuration>
+                    <executions>
+                        <execution>
+                            <id>sbom</id>
+                            <phase>package</phase>
+                            <goals>
+                                <goal>makeBom</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
                     <groupId>com.diffplug.spotless</groupId>
                     <artifactId>spotless-maven-plugin</artifactId>
                     <version>${spotless-maven-plugin.version}</version>
@@ -227,6 +248,10 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>flatten-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.cyclonedx</groupId>
+                <artifactId>cyclonedx-maven-plugin</artifactId>
             </plugin>
             <plugin>
                 <!-- the flattened POMs of the modules do not reference this parent, it is not published -->

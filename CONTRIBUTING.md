@@ -9,6 +9,8 @@ format the sources; this file describes what happens around a change.
   jar's artifact has no parent, no imported BOM and every version resolved, so consumers do not see the
   build structure of this repository. The generated `.flattened-pom.xml` files are ignored by git and
   removed by `./mvnw clean`. The parent POM itself is not published.
+- **Every module ships an SBOM**, `target/bom.json` in CycloneDX format, attached to the artifact with
+  the classifier `cyclonedx`. It lists the compile and runtime dependencies.
 
 ## Continuous integration
 
