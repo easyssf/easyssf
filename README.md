@@ -1,0 +1,488 @@
+# easyssf
+
+Building blocks for the
+[OpenID Shared Signals Framework (SSF)](https://openid.net/specs/openid-sharedsignals-framework-1_0.html)
+in Java: a framework independent **receiver** library and a **Spring Boot starter** that turns a
+Spring Boot application into an SSF receiver. Inspired by the Quarkus extension
+[quarkus-openid-ssf](https://github.com/quarkiverse/quarkus-openid-ssf).
+
+| | |
+|---|---|
+| **Status** | Experimental |
+| **Java** | 21+ |
+| **Group id** | `org.easyssf` |
+
+| Module | | Depends on |
+|---|---|---|
+| `easyssf-core` | The data structures of SSF shared by receivers and (later) transmitters: SETs, subjects, event types, stream configuration, transmitter metadata. | nothing |
+| `easyssf-receiver` | The receiver, independent of any framework: SET verification, de-duplication, event handlers, push handling, polling, stream management, token revocation and session termination logic. | `easyssf-core`, Nimbus JOSE + JWT, SLF4J |
+| `easyssf-receiver-spring-boot-starter` | The receiver for Spring Boot 4.1 (Spring Security 7.1, servlet stack): configuration properties, auto-configuration, push endpoint, resource server and OIDC client integration. | `easyssf-receiver`, Spring Boot |
+| [`easyssf-receiver-spring-boot-examples`](easyssf-receiver-spring-boot-examples) | Example resource server and OIDC client with a Keycloak setup. | |
+| [`easyssf-tests-conformance`](easyssf-tests-conformance) | Conformance tests against the OpenID conformance suite (started with Testcontainers): the receiver under test and JUnit tests that run the suite's SSF receiver test plans against it. | |
+
+Most of this document describes the Spring Boot starter. For other environments see
+[Using the receiver without Spring Boot](#using-the-receiver-without-spring-boot).
+
+## What it does
+
+- Mounts a **push endpoint** (RFC 8935) on a configurable route, `/ssf/push` by default, or
+  **polls** the transmitter for events (RFC 8936).
+- **Verifies every SET** (RFC 8417): signature against the transmitter's JWK Set, `typ`, `iss`,
+  `aud`, `jti`, `iat` and `events`. The JWK Set location is discovered from the transmitter's
+  `.well-known/ssf-configuration`.
+- Skips SETs it has already processed (`jti` de-duplication).
+- Hands verified events to your `SsfEventHandler` beans.
+- **Manages its stream** at the transmitter if you want: looks it up on startup and creates or updates
+  it, and offers an `SsfStreamClient` for the stream management API.
+- Records **metrics** with Micrometer.
+- **Resource server**: rejects access tokens once their session (or user) was revoked by a CAEP
+  `session-revoked` event.
+- **OIDC client**: terminates local sessions on CAEP `session-revoked` (by `sid` or user) and
+  `credential-change` (all sessions of the user).
+
+## Getting started
+
+```xml
+<dependency>
+    <groupId>org.easyssf</groupId>
+    <artifactId>easyssf-receiver-spring-boot-starter</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+</dependency>
+```
+
+```yaml
+easyssf:
+  receiver:
+    transmitter-issuer: https://idp.example/realms/demo   # required
+    expected-audience: https://my-app.example             # recommended
+    push:
+      expected-auth-header: Bearer ${SSF_PUSH_SECRET}     # recommended
+```
+
+Then create a stream with PUSH delivery at the transmitter that points to
+`https://my-app.example/ssf/push` and sends the configured `Authorization` header, or let the
+application [create the stream itself](#stream-management).
+
+The application starts even if the transmitter is not reachable: metadata and keys are fetched when
+the first SET arrives.
+
+The [examples](easyssf-receiver-spring-boot-examples) contain a resource server and an OIDC client that run against a Keycloak
+with a pre-configured realm.
+
+## Use case: resource server
+
+With `spring-boot-starter-security-oauth2-resource-server` on the classpath, nothing else is needed:
+
+| Event | Subject of the event | Effect |
+|---|---|---|
+| `session-revoked` | names a session (`complex` subject with a `session` member) | access tokens with that `sid` claim are rejected |
+| `session-revoked` | names only a user (`iss_sub`) | access tokens with that `sub` claim issued up to the time of the event are rejected |
+
+Rejected tokens get the usual `401` with `WWW-Authenticate: Bearer error="invalid_token"`.
+
+How it works: `SsfTokenRevocationEventHandler` records revocations in the `SsfTokenRevocationStore`,
+and `SsfRevokedTokenValidator` (an `OAuth2TokenValidator<Jwt>`) consults it for every request. Spring
+Boot adds that validator to the `JwtDecoder` it auto-configures.
+
+Things to know:
+
+- **Custom `JwtDecoder`**: if you define your own `JwtDecoder` bean, add the `SsfRevokedTokenValidator`
+  bean to its validators yourself.
+- **Multiple instances**: a SET is pushed to one instance only. Without a database the revocations
+  are kept in memory of that instance. If the application has a database they are kept there, see
+  [Keeping state in the database](#keeping-state-in-the-database). For any other shared store
+  (Redis, ...) provide a `SsfTokenRevocationStore` bean.
+- **`easyssf.receiver.resource-server.revocation-ttl`** (default `1h`) must be at least the maximum
+  lifetime of your access tokens. Revocations are forgotten after that time.
+- Opaque tokens are not covered, introspection already asks the authorization server.
+
+## Use case: OIDC client
+
+With `spring-boot-starter-security-oauth2-client` on the classpath and users logging in with
+`oauth2Login()`, nothing else is needed:
+
+| Event | Subject of the event | Effect |
+|---|---|---|
+| `session-revoked` | names a session | the local session whose ID token has that `sid` is invalidated |
+| `session-revoked` | names only a user (`iss_sub` or `email`) | all local sessions of that user are invalidated |
+| `credential-change` | names a user | all local sessions of that user are invalidated |
+
+How it works: `HttpSessionSsfSessionTerminator` tracks the live `HttpSession`s of the servlet container
+and invalidates those whose authenticated `OidcUser` matches the subject of the event (`sid`, `sub` +
+`iss`, or `email`).
+
+Things to know:
+
+- **Spring Session / multiple instances**: the default only sees the container sessions of the
+  instance that received the SET. Provide your own `SsfSessionTerminator` bean for an external session
+  store.
+- Matching can be customized with a `SsfSessionMatcher` bean.
+- `credential-change` terminates sessions for every kind of change (including a newly added
+  credential). To be more selective, set `easyssf.receiver.oidc-client.user-event-types` to an empty list
+  and call `SsfSessionTerminator` from your own handler.
+
+## Handling events yourself
+
+Every `SsfEventHandler` bean is invoked for every verified SET:
+
+```java
+@Component
+class StepUpHandler implements SsfEventHandler {
+
+    @Override
+    public void handle(SsfEventContext eventContext) {
+        // aliases and full event type URIs are both accepted, see SsfEventTypes
+        if (eventContext.hasEvent("CaepAssuranceLevelChange")) {
+            SsfSubject subject = eventContext.subjectFor("CaepAssuranceLevelChange");
+            Map<String, Object> event = eventContext.eventFor("CaepAssuranceLevelChange");
+            // subject.subject(), subject.sessionId(), subject.email(), subject.raw() ...
+        }
+        SsfEventToken token = eventContext.eventToken(); // jti, iss, iat, aud, events, subjectId, txn, claims
+    }
+
+}
+```
+
+Handlers must be idempotent. If a handler throws, the SET is not acknowledged and the transmitter is
+expected to deliver it again, in which case all handlers run again.
+
+## Push endpoint
+
+```yaml
+easyssf.receiver.push.endpoint-path: /ssf/push   # relative to the DispatcherServlet
+```
+
+A SET is verified and handled *before* it is acknowledged:
+
+| Condition | Response |
+|---|---|
+| SET verified and handled, or a duplicate | `202 Accepted` |
+| `expected-auth-header` configured and `Authorization` header does not match | `401` with `{"err":"authentication_failed"}` |
+| SET malformed, badly signed, not typed `secevent+jwt`, missing claims | `400` with `{"err":"invalid_request"}` |
+| wrong `iss` / `aud` | `400` with `{"err":"invalid_issuer"}` / `{"err":"invalid_audience"}` |
+| transmitter metadata or keys cannot be retrieved | `503`, the transmitter should retry |
+| an `SsfEventHandler` failed | `500`, the transmitter should retry |
+| not a `POST` | `405` |
+
+### Spring Security
+
+The transmitter has no session, CSRF token or access token for your application. The starter
+therefore registers a dedicated `SecurityFilterChain` for the push endpoint path only (stateless, no
+CSRF, `permitAll`); it takes precedence over your own filter chains and does not replace Spring Boot's
+default security. The SET itself is authenticated by its signature and, if configured, the
+`Authorization` header.
+
+Set `easyssf.receiver.push.security.enabled=false` to secure the endpoint in your own filter chain
+instead.
+
+## POLL delivery
+
+With `easyssf.receiver.delivery-method=poll` the application has no push endpoint. Instead the `SsfPoller`
+fetches SETs from the poll endpoint of the stream (RFC 8936):
+
+```yaml
+easyssf:
+  receiver:
+    delivery-method: poll
+    stream:
+      id: 7d9a4e13-…            # a stream created at the transmitter, or management: receiver
+    poll:
+      interval: 30s
+    oauth2: …                    # see "Calling the transmitter"
+```
+
+- The poll endpoint is taken from the stream (`stream.id` or a stream managed by the receiver), or set
+  it with `easyssf.receiver.poll.endpoint-url`.
+- A SET is acknowledged after it was handled. An invalid SET is reported to the transmitter (`setErrs`).
+  A SET that could not be handled is neither acknowledged nor reported and is delivered again.
+- If more SETs are available than `poll.max-events`, they are fetched right away.
+- `429` / `503` responses with a `Retry-After` header (in seconds) pause the polling.
+- With `easyssf.receiver.poll.auto-startup=false` nothing is polled until you call `SsfPoller.pollNow()`.
+- Long polling is not used, requests always ask the transmitter to return immediately.
+
+## Stream management
+
+By default the stream is created at the transmitter (`easyssf.receiver.stream.management=transmitter`).
+If you configure its identifier with `easyssf.receiver.stream.id`, the application looks the stream up on
+startup to learn its audience and poll endpoint.
+
+With `easyssf.receiver.stream.management=receiver` the application manages the stream itself:
+
+```yaml
+easyssf:
+  receiver:
+    stream:
+      management: receiver
+      events-requested: CaepSessionRevoked, CaepCredentialChange
+    push:
+      # how the transmitter reaches the push endpoint (not needed for delivery-method: poll)
+      delivery-endpoint-url: https://my-app.example/ssf/push
+      expected-auth-header: Bearer ${SSF_PUSH_SECRET}   # the transmitter is told to send it
+    oauth2: …                                           # see "Calling the transmitter"
+```
+
+On startup the `SsfStreamRegistrar`
+
+1. reuses the stream of the receiver that has the desired delivery (same method, for PUSH the same
+   endpoint), and updates its requested events if they differ,
+2. otherwise creates the stream,
+3. and if the transmitter refuses a second stream (`409`, Keycloak allows one per receiver), changes
+   the existing one to the desired delivery.
+
+This happens in the background and is retried with a growing delay (up to 30s), a transmitter that
+is down does not keep the application from starting. As long as `easyssf.receiver.expected-audience` is
+not set, the audience of the stream is used to validate SETs once the stream is known.
+`easyssf.receiver.stream.delete-on-shutdown=true` deletes the stream when the application stops.
+
+The `SsfStreamClient` bean gives access to the whole stream management API (SSF 1.0, section 8.1):
+
+```java
+streamClient.getStreams();
+streamClient.updateStatus(streamId, SsfStreamStatus.PAUSED, "maintenance");
+streamClient.addSubject(streamId, Map.of("format", "email", "email", "user@example.com"), true);
+streamClient.requestVerification(streamId, "my-state");
+```
+
+The identifier of the current stream is available from the `SsfReceiverStream` bean. To verify the
+stream, request the verification through the `SsfStreamVerification` bean: it generates the `state`
+and rejects a verification event that echoes another state, or names another stream, with
+`invalid_state` / `invalid_request`:
+
+```java
+streamVerification.requestVerification(streamClient, receiverStream.getStreamId());
+```
+
+## Keeping state in the database
+
+By default the receiver remembers in memory which SETs it processed and which sessions and subjects
+were revoked. That state is lost on restart and not shared between instances.
+
+If the application has a `JdbcTemplate` (with `spring-boot-starter-jdbc`, Spring Data JDBC or JPA),
+the state is kept in its database instead, without further configuration:
+
+| Table | Store | Content |
+|---|---|---|
+| `EASYSSF_PROCESSED_SET` | `JdbcSsfJtiDedupStore` | the SETs that were processed, forgotten after `easyssf.receiver.dedup.retention` (7 days) |
+| `EASYSSF_REVOCATION` | `JdbcSsfTokenRevocationStore` | revoked sessions and subjects, removed after `easyssf.receiver.resource-server.revocation-ttl` |
+
+- **Tables**: in an embedded database (H2, HSQLDB, Derby) the tables are created on startup. For any
+  other database create them with your migration tool, the statements are in
+  [`schema.sql`](easyssf-receiver-spring-boot-autoconfigure/src/main/resources/org/easyssf/receiver/spring/boot/jdbc/schema.sql)
+  (`classpath:org/easyssf/receiver/spring/boot/jdbc/schema.sql`), or set
+  `easyssf.receiver.jdbc.initialize-schema=always`. If a table is missing the application fails on
+  startup and says so, rather than on the first event.
+- **Opting out**: `easyssf.receiver.jdbc.enabled=false` keeps the state in memory although the
+  application has a database. Your own `SsfJtiDedupStore` or `SsfTokenRevocationStore` bean takes
+  precedence in any case.
+- **Cleanup**: expired rows are deleted when a store is written to (the SET table at most once a
+  minute) and every `easyssf.receiver.jdbc.cleanup-interval` (15 minutes) by `JdbcSsfStoreCleanup`
+  on a thread of its own; `easyssf.receiver.jdbc.cleanup-interval=0` turns the periodic cleanup off.
+  Both stores offer `purgeExpired()` to do it from your own scheduler.
+- **Cost**: a resource server checks every access token with one query on the primary key of
+  `EASYSSF_REVOCATION`.
+- The stores use plain SQL (timestamps are stored as milliseconds since the epoch) and were tested
+  with H2 and PostgreSQL. The revocation table is only used by resource servers. Sessions of an
+  OIDC client are not affected, see `SsfSessionTerminator`.
+
+## Calling the transmitter
+
+Stream management and polling call the transmitter and usually need an access token:
+
+```yaml
+easyssf:
+  receiver:
+    oauth2:                                   # client credentials grant
+      token-uri: https://idp.example/realms/demo/protocol/openid-connect/token
+      client-id: my-receiver
+      client-secret: ${SSF_RECEIVER_CLIENT_SECRET}
+      scopes: ssf.read, ssf.manage
+    # or, for transmitters that hand out long-lived tokens:
+    # transmitter-access-token: ${SSF_TRANSMITTER_TOKEN}
+```
+
+For anything else provide a `SsfTransmitterTokenProvider` bean. Metadata and JWK Set are fetched
+without authentication.
+
+All calls to the transmitter go through the `SsfHttpClient` bean:
+
+- If the application has a `RestClient.Builder` (`spring-boot-starter-restclient`), the calls are
+  made with a `RestClient` built from it. They then use the HTTP client library, the
+  `spring.http.clients.*` settings (SSL bundle, redirects) and the `RestClientCustomizer`s of the
+  application, and are observed like its other HTTP calls (`http.client.requests` metric, tracing).
+  `easyssf.receiver.http.use-rest-client=false` switches this off.
+- Otherwise the HTTP client of the JDK is used.
+- Timeouts: `easyssf.receiver.http.connect-timeout` / `read-timeout` if set, else
+  `spring.http.clients.connect-timeout` / `read-timeout` (for the `RestClient`), else 5 seconds.
+- Provide your own `SsfHttpClient` bean for anything else.
+
+## Metrics
+
+If the application has a Micrometer `MeterRegistry` (for example with
+`spring-boot-starter-actuator`), the receiver records:
+
+| Meter | Type | Tags |
+|---|---|---|
+| `easyssf.receiver.sets` | counter | `delivery` (`push`, `poll`), `outcome` (`handled`, `duplicate`, `invalid`, `unauthenticated`, `unavailable`, `failed`) |
+| `easyssf.receiver.events` | counter | `delivery`, `event` (for example `CaepSessionRevoked`) |
+| `easyssf.receiver.poll` | timer | `outcome` (`success`, `failure`) |
+
+Switch it off with `easyssf.receiver.metrics.enabled=false`, or provide your own `SsfReceiverMetrics` bean.
+
+## Configuration
+
+| Property | Default | |
+|---|---|---|
+| `easyssf.receiver.enabled` | `true` | Switches the receiver off entirely when `false`. |
+| `easyssf.receiver.transmitter-issuer` | | Required. Issuer of the transmitter, must match `iss` of every SET. |
+| `easyssf.receiver.transmitter-metadata-url` | derived | By default `<host>/.well-known/ssf-configuration<issuer-path>` (SSF 1.0, section 7.2), falling back to `<issuer>/.well-known/ssf-configuration`. |
+| `easyssf.receiver.transmitter-jwks-url` | from metadata | Skips metadata discovery when set. |
+| `easyssf.receiver.expected-audience` | | When set, every SET must contain it in `aud`. |
+| `easyssf.receiver.delivery-method` | `push` | `push` or `poll`. |
+| `easyssf.receiver.http.use-rest-client` | `true` | Call the transmitter with the `RestClient` of the application if it has a `RestClient.Builder`. |
+| `easyssf.receiver.http.connect-timeout` / `read-timeout` | `5s` | Calls to the transmitter. Unset, `spring.http.clients.*` applies to the `RestClient` before the 5 seconds do. |
+| `easyssf.receiver.http.user-agent` | default of the HTTP client | `User-Agent` header for calls to the transmitter. |
+| `easyssf.receiver.transmitter-access-token` | | Static access token for stream management and polling. |
+| `easyssf.receiver.oauth2.token-uri` | | Token endpoint for the client credentials grant. |
+| `easyssf.receiver.oauth2.client-id` / `client-secret` | | |
+| `easyssf.receiver.oauth2.scopes` | | |
+| `easyssf.receiver.oauth2.client-authentication-method` | `basic` | `basic` or `post`. |
+| `easyssf.receiver.stream.management` | `transmitter` | `receiver` makes the application create or update its stream on startup. |
+| `easyssf.receiver.stream.id` | | Stream created at the transmitter, looked up on startup. |
+| `easyssf.receiver.stream.events-requested` | `CaepSessionRevoked`, `CaepCredentialChange` | For a stream managed by the receiver. |
+| `easyssf.receiver.stream.description` | | For a stream managed by the receiver. |
+| `easyssf.receiver.stream.delete-on-shutdown` | `false` | For a stream managed by the receiver. |
+| `easyssf.receiver.poll.endpoint-url` | from the stream | |
+| `easyssf.receiver.poll.auto-startup` | `true` | |
+| `easyssf.receiver.poll.interval` | `30s` | |
+| `easyssf.receiver.poll.initial-delay` | `1s` | |
+| `easyssf.receiver.poll.max-events` | `100` | SETs per request. |
+| `easyssf.receiver.metrics.enabled` | `true` | |
+| `easyssf.receiver.set-validation.accepted-algorithms` | `RS256` | JWS algorithms accepted for SETs. |
+| `easyssf.receiver.set-validation.min-rsa-key-size` | `2048` | `0` disables the check. |
+| `easyssf.receiver.set-validation.require-type-header` | `true` | Requires `typ: secevent+jwt`. |
+| `easyssf.receiver.set-validation.clock-skew` | `60s` | Tolerance for `iat` in the future. |
+| `easyssf.receiver.push.enabled` | `true` | |
+| `easyssf.receiver.push.endpoint-path` | `/ssf/push` | |
+| `easyssf.receiver.push.expected-auth-header` | | Exact `Authorization` header value the transmitter must send. |
+| `easyssf.receiver.push.delivery-endpoint-url` | | How the transmitter reaches the push endpoint, for a stream managed by the receiver. |
+| `easyssf.receiver.push.security.enabled` | `true` | Dedicated `SecurityFilterChain` for the push endpoint. |
+| `easyssf.receiver.dedup.enabled` | `true` | |
+| `easyssf.receiver.dedup.capacity` | `10000` | Size of the in-memory `jti` store. |
+| `easyssf.receiver.dedup.retention` | `7d` | How long the JDBC store remembers a processed SET. |
+| `easyssf.receiver.jdbc.enabled` | `true` | Keep state in the database if the application has a `JdbcTemplate`. |
+| `easyssf.receiver.jdbc.initialize-schema` | `embedded` | When to create missing tables: `embedded`, `always` or `never`. |
+| `easyssf.receiver.jdbc.table-prefix` | `EASYSSF_` | Prefix of the table names. |
+| `easyssf.receiver.jdbc.cleanup-interval` | `15m` | How often expired rows are purged; `0` turns it off. |
+| `easyssf.receiver.resource-server.enabled` | `true` | |
+| `easyssf.receiver.resource-server.event-types` | `CaepSessionRevoked` | Events that revoke access tokens. |
+| `easyssf.receiver.resource-server.revocation-ttl` | `1h` | |
+| `easyssf.receiver.oidc-client.enabled` | `true` | |
+| `easyssf.receiver.oidc-client.session-event-types` | `CaepSessionRevoked` | Events that terminate the session (or user sessions) of their subject. |
+| `easyssf.receiver.oidc-client.user-event-types` | `CaepCredentialChange` | Events that terminate all sessions of their subject's user. |
+
+Beans you can replace: `SsfSetVerifier`, `SsfTransmitterMetadataResolver`, `SsfJtiDedupStore`,
+`SsfTokenRevocationStore`, `SsfRevokedTokenValidator`, `SsfSessionTerminator`, `SsfSessionMatcher`,
+`SsfTransmitterTokenProvider`, `SsfStreamClient`, `SsfStreamRegistrar`, `SsfPoller`, `SsfReceiverMetrics`,
+`SsfHttpClient`, `SsfPushHandler`.
+
+## Keycloak
+
+Tested with the SSF transmitter of Keycloak 26.8 (`--features=ssf`), see the [examples](easyssf-receiver-spring-boot-examples).
+
+- Keycloak publishes its metadata at both locations the starter looks at, no
+  `transmitter-metadata-url` is needed.
+- A receiver is a client in Keycloak. The audience of its SETs is `<client-id>/<stream-id>` unless
+  the stream is given an explicit audience.
+- Stream management and polling need an access token of the service account of that client with the
+  scopes `ssf.read` and `ssf.manage` (optional client scopes of the client). Keycloak allows one
+  stream per receiver.
+- A receiver only gets events of all users if its client has the attribute
+  `ssf.defaultSubjects=ALL`.
+- When an admin signs a user out of all sessions, Keycloak sends a `session-revoked` event whose
+  subject has a `session` member with the identifier `ALL`. The starter treats this like a subject
+  that names only the user (`SsfSubject.sessionId()` is `null`).
+- Keycloak delivers events with its outbox drainer, by default every 30 seconds
+  (`--spi-ssf-transmitter--default--outbox-drainer-interval`).
+
+## Not included (yet)
+
+- WebFlux applications
+- More than one transmitter per application
+- Long polling, and a durable store for acknowledgements that were not sent yet (a SET whose
+  acknowledgement is lost is delivered again and skipped as a duplicate)
+
+## Using the receiver without Spring Boot
+
+`easyssf-receiver` has no framework dependencies. Assemble the parts you need and call them from
+your framework:
+
+```xml
+<dependency>
+    <groupId>org.easyssf</groupId>
+    <artifactId>easyssf-receiver</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+</dependency>
+```
+
+```java
+SsfHttpClient httpClient = new JdkSsfHttpClient();   // or the HTTP client of your framework
+String issuer = "https://idp.example/realms/demo";
+
+SsfTransmitterMetadataResolver metadata = new SsfTransmitterMetadataResolver(issuer, null, httpClient);
+NimbusSsfSetVerifier verifier = new NimbusSsfSetVerifier(issuer,
+        () -> metadata.resolve().jwksUri().toString(), httpClient);
+verifier.setExpectedAudience("https://my-app.example");
+
+SsfEventHandler handler = (eventContext) -> {
+    if (eventContext.hasEvent("CaepSessionRevoked")) {
+        SsfSubject subject = eventContext.subjectFor("CaepSessionRevoked");
+        // end the session subject.sessionId() of the user subject.subject()
+    }
+};
+SsfSetProcessor processor = new SsfSetProcessor(verifier, new InMemorySsfJtiDedupStore(10_000), List.of(handler));
+
+// PUSH: call this from the endpoint the transmitter posts SETs to
+SsfPushHandler pushHandler = new SsfPushHandler(processor, "Bearer " + pushSecret);
+SsfPushResponse response = pushHandler.handle(authorizationHeader, requestBody);
+// send response.status() and, if not null, response.body() as application/json
+
+// POLL: fetch SETs from the transmitter instead
+SsfPoller poller = new SsfPoller(httpClient, tokenProvider, () -> pollEndpoint, processor);
+poller.start();
+```
+
+Ready-made pieces for the common reactions:
+
+- `SsfTokenRevocationEventHandler` + `SsfTokenRevocationStore.isRevoked(sid, sub, iat)` to reject
+  access tokens of revoked sessions and users.
+- `SsfSessionTerminationEventHandler` + your `SsfSessionTerminator` to end local sessions;
+  `SsfSubjectClaimsMatcher` tells whether the subject of an event matches the claims of a user.
+- `SsfStreamClient` and `SsfStreamRegistrar` for stream management,
+  `ClientCredentialsSsfTransmitterTokenProvider` for the access token, `MicrometerSsfReceiverMetrics`
+  for metrics.
+
+The Spring Boot starter is such an integration, see `easyssf-receiver-spring-boot-autoconfigure`.
+
+## Build
+
+```sh
+./mvnw install
+```
+
+The build checks the formatting of the Java sources with [Spotless](https://github.com/diffplug/spotless)
+(the [Spring Java Format](https://github.com/spring-io/spring-javaformat) conventions, see
+[`etc/eclipse-formatter.prefs`](etc/eclipse-formatter.prefs)). To format them:
+
+```sh
+./mvnw spotless:apply
+```
+
+The tests against the OpenID conformance suite are not part of the normal build; they need Docker
+and take a few minutes per plan:
+
+```sh
+./mvnw -pl easyssf-tests-conformance -Pconformance verify
+```
+
+See [`easyssf-tests-conformance`](easyssf-tests-conformance) for the details, the test plans and how to run
+them against a newer suite than the released one.

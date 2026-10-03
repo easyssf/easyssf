@@ -1,0 +1,11 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="ExampleOidcClientApplication" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+    <option name="ACTIVE_PROFILES" value="" />
+    <module name="example-oidc-client" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="org.easyssf.examples.oidcclient.ExampleOidcClientApplication" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/easyssf-receiver-spring-boot-examples/example-oidc-client" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

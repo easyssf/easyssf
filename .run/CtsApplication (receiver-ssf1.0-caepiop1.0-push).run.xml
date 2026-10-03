@@ -1,0 +1,14 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="CtsApplication (receiver-ssf1.0-caepiop1.0-push)" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+    <envs>
+      <env name="CTS_DELIVERY" value="push" />
+      <env name="CTS_TRANSMITTER_ISSUER" value="https://localhost.emobix.co.uk:8443/test/a/easyssf-receiver-ssf1.0-caepiop1.0-push" />
+    </envs>
+    <module name="easyssf-tests-conformance" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="org.easyssf.conformance.receiver.CtsApplication" />
+    <option name="WORKING_DIRECTORY" value="file://$PROJECT_DIR$/easyssf-tests-conformance" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

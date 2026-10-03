@@ -1,0 +1,47 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: example-resource-server
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER:http://localhost:8080/realms/ssf-demo}
+
+easyssf:
+  receiver:
+    # Keycloak is both the issuer of the access tokens and the SSF transmitter
+    transmitter-issuer: ${spring.security.oauth2.resourceserver.jwt.issuer-uri}
+    # the application registers its own PUSH stream on startup, Keycloak assigns the audience
+    stream:
+      management: receiver
+      events-requested: CaepSessionRevoked
+      description: example-resource-server
+    push:
+      endpoint-path: /ssf/push
+      # how Keycloak (in Docker) reaches the push endpoint, must be allowed by 'ssf.validPushUrls' of the client
+      delivery-endpoint-url: ${SSF_PUSH_URL:http://host.docker.internal:8081/ssf/push}
+      # the stream is created with this authorization header, Keycloak sends it with every SET
+      expected-auth-header: Bearer example-resource-server-push-secret
+    # the service account of the client manages the stream
+    oauth2:
+      token-uri: ${spring.security.oauth2.resourceserver.jwt.issuer-uri}/protocol/openid-connect/token
+      client-id: example-resource-server
+      client-secret: ${KEYCLOAK_CLIENT_SECRET:example-resource-server-secret}
+      scopes: ssf.read, ssf.manage
+    resource-server:
+      # at least the access token lifespan of the realm (5 minutes by default)
+      revocation-ttl: 10m
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # /actuator/metrics/easyssf.receiver.sets, like the API it needs an access token
+        include: health, metrics
+
+logging:
+  level:
+    org.easyssf: debug

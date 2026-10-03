@@ -1,0 +1,11 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="ExampleResourceServerApplication" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+    <option name="ACTIVE_PROFILES" value="" />
+    <module name="example-resource-server" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="org.easyssf.examples.resourceserver.ExampleResourceServerApplication" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/easyssf-receiver-spring-boot-examples/example-resource-server" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

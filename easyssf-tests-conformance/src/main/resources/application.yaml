@@ -1,0 +1,54 @@
+# Receiver under test for the OpenID conformance suite running locally
+# (https://localhost.emobix.co.uk:8443, see README.md).
+
+server:
+  port: 9443
+  error:
+    # the reason of a refused request, e.g. why no run could be started for a test module
+    include-message: always
+  ssl:
+    # created with mkcert, see README.md
+    certificate: ${CTS_TLS_CERTIFICATE:file:certs/localhost.pem}
+    certificate-private-key: ${CTS_TLS_KEY:file:certs/localhost-key.pem}
+
+spring:
+  application:
+    name: easyssf-conformance-receiver
+  ssl:
+    bundle:
+      pem:
+        # the self-signed certificate of the local conformance suite, see fetch-suite-certificate.sh
+        conformance-suite:
+          truststore:
+            certificate: ${CTS_SUITE_CERTIFICATE:file:certs/conformance-suite.pem}
+
+cts:
+  transmitter:
+    # the test instance of the suite, with the alias of its configuration
+    issuer: ${CTS_TRANSMITTER_ISSUER:https://localhost.emobix.co.uk:8443/test/a/easyssf-receiver-sb-test}
+    ssl-bundle: conformance-suite
+    # the certificate of the local suite is issued for 'localhost'
+    verify-hostname: false
+  auth:
+    # 'dynamic' (client credentials) or 'static' (access-token), as the test plan is configured
+    mode: ${CTS_AUTH_MODE:dynamic}
+    client-id: ${CTS_CLIENT_ID:easyssf-receiver}
+    client-secret: ${CTS_CLIENT_SECRET:easyssf-receiver-secret}
+    scopes: ssf.read, ssf.manage
+    client-authentication-method: ${CTS_CLIENT_AUTH:basic}
+    access-token: ${CTS_ACCESS_TOKEN:}
+  delivery:
+    # 'push' or 'poll', as the test plan is configured
+    method: ${CTS_DELIVERY:push}
+    push-url: ${CTS_PUSH_URL:https://localhost:9443/ssf/push}
+  stream:
+    events-requested: CaepSessionRevoked, CaepCredentialChange, CaepDeviceComplianceChange
+    subject-to-remove:
+      format: email
+      email: foo@example.com
+  run:
+    idle-timeout: 30s
+
+logging:
+  level:
+    org.easyssf: debug
