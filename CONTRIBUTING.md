@@ -3,9 +3,17 @@
 Thanks for your interest. The [README](README.md#build) describes how to build the project and
 format the sources; this file describes what happens around a change.
 
+## Pull requests
+
+Every pull request refers to a [GitHub issue](https://github.com/easyssf/easyssf/issues) that
+describes the problem or the feature, so that the discussion of what to do and why happens before
+the code is written and stays findable afterwards. Open the issue first if there is none, and name it
+in the description of the pull request (`Closes #123`). The pull requests Dependabot opens are the
+exception.
+
 ## Build artifacts
 
-- **Published POMs are flattened** (`flatten-maven-plugin`, mode `ossrh`): the POM that goes into a
+- **Published POMs are flattened** (`flatten-maven-plugin`, mode `oss`): the POM that goes into a
   jar's artifact has no parent, no imported BOM and every version resolved, so consumers do not see the
   build structure of this repository. The generated `.flattened-pom.xml` files are ignored by git and
   removed by `./mvnw clean`. The parent POM itself is not published.
