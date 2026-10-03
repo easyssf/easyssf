@@ -13,6 +13,10 @@
     <name>easyssf-test</name>
     <description>Test support for Shared Signals Framework receivers: a transmitter that signs and delivers SETs</description>
 
+    <properties>
+        <automatic.module.name>org.easyssf.test</automatic.module.name>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>org.easyssf</groupId>

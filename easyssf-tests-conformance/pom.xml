@@ -12,6 +12,7 @@
     <description>Receiver under test for the OpenID Foundation conformance suite's SSF receiver tests</description>
 
     <properties>
+        <automatic.module.name>org.easyssf.conformance</automatic.module.name>
         <maven.deploy.skip>true</maven.deploy.skip>
         <!-- the tests against the OpenID conformance suite need Docker or a running suite, see README.md -->
         <conformance.groups/>

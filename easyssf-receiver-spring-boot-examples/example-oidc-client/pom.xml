@@ -11,6 +11,10 @@
     <name>example-oidc-client</name>
     <description>Web application that logs users in with Keycloak and ends their sessions when Keycloak revokes them</description>
 
+    <properties>
+        <automatic.module.name>org.easyssf.examples.oidcclient</automatic.module.name>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>

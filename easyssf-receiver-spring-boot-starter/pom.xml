@@ -11,6 +11,10 @@
     <name>easyssf-receiver-spring-boot-starter</name>
     <description>Starter that turns a Spring Boot application into a Shared Signals Framework receiver</description>
 
+    <properties>
+        <automatic.module.name>org.easyssf.receiver.spring.boot.starter</automatic.module.name>
+    </properties>
+
 
     <dependencies>
         <dependency>

@@ -11,6 +11,10 @@
     <name>example-resource-server</name>
     <description>OAuth2 resource server that rejects access tokens of sessions revoked in Keycloak</description>
 
+    <properties>
+        <automatic.module.name>org.easyssf.examples.resourceserver</automatic.module.name>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>

@@ -11,6 +11,10 @@
     <name>easyssf-core</name>
     <description>The data structures of the Shared Signals Framework shared by receivers and transmitters</description>
 
+    <properties>
+        <automatic.module.name>org.easyssf.core</automatic.module.name>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>org.junit.jupiter</groupId>

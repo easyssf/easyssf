@@ -11,6 +11,11 @@
     <name>easyssf</name>
     <description>Building blocks for the OpenID Shared Signals Framework (SSF)</description>
     <url>https://easyssf.org</url>
+    <inceptionYear>2026</inceptionYear>
+    <organization>
+        <name>easyssf</name>
+        <url>https://easyssf.org</url>
+    </organization>
 
     <licenses>
         <license>
@@ -22,7 +27,10 @@
         <developer>
             <id>thomasdarimont</id>
             <name>Thomas Darimont</name>
+            <email>oss@easyssf.org</email>
             <url>https://github.com/thomasdarimont</url>
+            <organization>easyssf</organization>
+            <organizationUrl>https://easyssf.org</organizationUrl>
         </developer>
     </developers>
     <scm>
@@ -51,6 +59,8 @@
         <maven.compiler.release>${java.version}</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <!-- reproducible builds: the timestamp of the files in the jars, updated for every release -->
+        <project.build.outputTimestamp>2026-10-03T00:00:00Z</project.build.outputTimestamp>
 
         <!-- All modules build against the versions of the Spring Boot BOM, imported below.
              The plain modules (easyssf-core, easyssf-receiver) do not depend on Spring:
@@ -116,6 +126,20 @@
     </dependencyManagement>
 
     <build>
+        <resources>
+            <resource>
+                <directory>${project.basedir}/src/main/resources</directory>
+            </resource>
+            <!-- the licence travels with the code -->
+            <resource>
+                <directory>${maven.multiModuleProjectDirectory}</directory>
+                <targetPath>META-INF</targetPath>
+                <includes>
+                    <include>LICENSE</include>
+                    <include>NOTICE</include>
+                </includes>
+            </resource>
+        </resources>
         <pluginManagement>
             <plugins>
                 <plugin>
@@ -135,6 +159,14 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-jar-plugin</artifactId>
                     <version>${maven-jar-plugin.version}</version>
+                    <configuration>
+                        <archive>
+                            <manifestEntries>
+                                <!-- every module sets automatic.module.name -->
+                                <Automatic-Module-Name>${automatic.module.name}</Automatic-Module-Name>
+                            </manifestEntries>
+                        </archive>
+                    </configuration>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -171,7 +203,7 @@
                     <artifactId>flatten-maven-plugin</artifactId>
                     <version>${flatten-maven-plugin.version}</version>
                     <configuration>
-                        <flattenMode>ossrh</flattenMode>
+                        <flattenMode>oss</flattenMode>
                         <updatePomFile>true</updatePomFile>
                     </configuration>
                     <executions>

@@ -11,6 +11,10 @@
     <name>easyssf-receiver-spring-boot-autoconfigure</name>
     <description>Spring Boot auto-configuration for the easyssf receiver</description>
 
+    <properties>
+        <automatic.module.name>org.easyssf.receiver.spring.boot.autoconfigure</automatic.module.name>
+    </properties>
+
 
     <dependencies>
         <dependency>
