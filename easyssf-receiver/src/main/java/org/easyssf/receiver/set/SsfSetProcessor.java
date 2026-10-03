@@ -1,6 +1,7 @@
 package org.easyssf.receiver.set;
 
 import java.util.List;
+import java.util.function.Function;
 
 import org.easyssf.core.SsfDeliveryMethod;
 import org.easyssf.core.event.SsfEventToken;
@@ -49,7 +50,7 @@ public class SsfSetProcessor {
 
     private SsfReceiverMetrics metrics = SsfReceiverMetrics.NOOP;
 
-    private SsfStreamVerification streamVerification;
+    private Function<String, SsfStreamVerification> streamVerifications = (issuer) -> null;
 
     /**
      * @param verifier verifies the SETs
@@ -74,7 +75,17 @@ public class SsfSetProcessor {
      * unchecked.
      */
     public void setStreamVerification(SsfStreamVerification streamVerification) {
-        this.streamVerification = streamVerification;
+        this.streamVerifications = (issuer) -> streamVerification;
+    }
+
+    /**
+     * For a receiver with several transmitters.
+     * @param streamVerifications the stream verification of a transmitter by its issuer,
+     * {@code null} for none
+     */
+    public void setStreamVerifications(Function<String, SsfStreamVerification> streamVerifications) {
+        SsfAssert.notNull(streamVerifications, "streamVerifications must not be null");
+        this.streamVerifications = streamVerifications;
     }
 
     /**
@@ -98,24 +109,27 @@ public class SsfSetProcessor {
     public Outcome process(String encodedSet, SsfDeliveryMethod deliveryMethod) {
         SsfEventToken eventToken;
         SsfEventContext eventContext;
+        String issuer = SsfSetClaims.unverifiedIssuer(encodedSet);
         try {
             eventToken = this.verifier.verify(encodedSet);
             eventContext = new SsfEventContext(eventToken);
-            if (this.streamVerification != null) {
-                this.streamVerification.validate(eventContext);
+            SsfStreamVerification streamVerification = this.streamVerifications.apply(eventToken.iss());
+            if (streamVerification != null) {
+                streamVerification.validate(eventContext);
             }
         }
         catch (SsfSetVerificationException ex) {
-            this.metrics.setReceived(deliveryMethod, SetOutcome.INVALID);
+            this.metrics.setReceived(issuer, deliveryMethod, SetOutcome.INVALID);
             throw ex;
         }
         catch (SsfTransmitterUnavailableException ex) {
-            this.metrics.setReceived(deliveryMethod, SetOutcome.UNAVAILABLE);
+            this.metrics.setReceived(issuer, deliveryMethod, SetOutcome.UNAVAILABLE);
             throw ex;
         }
+        issuer = eventToken.iss();
         if (this.dedupStore != null && this.dedupStore.seenBefore(eventToken)) {
             logger.debug("Skipping SET " + eventToken.jti() + ", it was processed before");
-            this.metrics.setReceived(deliveryMethod, SetOutcome.DUPLICATE);
+            this.metrics.setReceived(issuer, deliveryMethod, SetOutcome.DUPLICATE);
             return Outcome.DUPLICATE;
         }
         if (logger.isDebugEnabled()) {
@@ -143,11 +157,13 @@ public class SsfSetProcessor {
             if (this.dedupStore != null) {
                 this.dedupStore.forget(eventToken);
             }
-            this.metrics.setReceived(deliveryMethod, SetOutcome.FAILED);
+            this.metrics.setReceived(issuer, deliveryMethod, SetOutcome.FAILED);
             throw new SsfEventHandlingException("Could not handle SET " + eventToken.jti(), failure);
         }
-        this.metrics.setReceived(deliveryMethod, SetOutcome.HANDLED);
-        eventContext.eventTypes().forEach((eventType) -> this.metrics.eventHandled(eventType, deliveryMethod));
+        this.metrics.setReceived(issuer, deliveryMethod, SetOutcome.HANDLED);
+        String transmitter = issuer;
+        eventContext.eventTypes()
+            .forEach((eventType) -> this.metrics.eventHandled(transmitter, eventType, deliveryMethod));
         return Outcome.HANDLED;
     }
 

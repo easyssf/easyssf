@@ -35,8 +35,14 @@ public class MicrometerSsfReceiverMetrics implements SsfReceiverMetrics {
 
     @Override
     public void setReceived(SsfDeliveryMethod deliveryMethod, SetOutcome outcome) {
+        setReceived(null, deliveryMethod, outcome);
+    }
+
+    @Override
+    public void setReceived(String transmitter, SsfDeliveryMethod deliveryMethod, SetOutcome outcome) {
         Counter.builder("easyssf.receiver.sets")
             .description("Security event tokens received")
+            .tag("transmitter", transmitter(transmitter))
             .tag("delivery", tag(deliveryMethod))
             .tag("outcome", tag(outcome))
             .register(this.meterRegistry)
@@ -45,8 +51,14 @@ public class MicrometerSsfReceiverMetrics implements SsfReceiverMetrics {
 
     @Override
     public void eventHandled(String eventType, SsfDeliveryMethod deliveryMethod) {
+        eventHandled(null, eventType, deliveryMethod);
+    }
+
+    @Override
+    public void eventHandled(String transmitter, String eventType, SsfDeliveryMethod deliveryMethod) {
         Counter.builder("easyssf.receiver.events")
             .description("Security events handled")
+            .tag("transmitter", transmitter(transmitter))
             .tag("delivery", tag(deliveryMethod))
             .tag("event", SsfEventTypes.aliasOf(eventType))
             .register(this.meterRegistry)
@@ -55,11 +67,21 @@ public class MicrometerSsfReceiverMetrics implements SsfReceiverMetrics {
 
     @Override
     public void pollCompleted(Duration duration, boolean success) {
+        pollCompleted(null, duration, success);
+    }
+
+    @Override
+    public void pollCompleted(String transmitter, Duration duration, boolean success) {
         Timer.builder("easyssf.receiver.poll")
             .description("Poll requests to the transmitter")
+            .tag("transmitter", transmitter(transmitter))
             .tag("outcome", success ? "success" : "failure")
             .register(this.meterRegistry)
             .record(duration);
+    }
+
+    private static String transmitter(String issuer) {
+        return (issuer != null) ? issuer : "unknown";
     }
 
     private static String tag(Enum<?> value) {

@@ -20,6 +20,7 @@ import org.easyssf.receiver.set.InMemorySsfJtiDedupStore;
 import org.easyssf.receiver.set.SsfJtiDedupStore;
 import org.easyssf.receiver.set.SsfSetProcessor;
 import org.easyssf.receiver.set.SsfSetVerifier;
+import org.easyssf.receiver.spring.boot.SsfTransmitterCustomizer;
 import org.easyssf.receiver.spring.boot.http.RestClientSsfHttpClient;
 import org.easyssf.receiver.spring.boot.jdbc.JdbcSsfJtiDedupStore;
 import org.easyssf.receiver.spring.boot.jdbc.JdbcSsfStoreCleanup;
@@ -29,6 +30,8 @@ import org.easyssf.receiver.spring.boot.web.SsfPushEndpoint;
 import org.easyssf.receiver.stream.SsfReceiverStream;
 import org.easyssf.receiver.stream.SsfStreamClient;
 import org.easyssf.receiver.stream.SsfStreamRegistrar;
+import org.easyssf.receiver.transmitter.SsfTransmitter;
+import org.easyssf.receiver.transmitter.SsfTransmitters;
 import org.easyssf.test.TestTransmitter;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -77,6 +80,75 @@ class SsfReceiverAutoConfigurationTests {
                 AutoConfigurations.of(DispatcherServletAutoConfiguration.class, WebMvcAutoConfiguration.class,
                         SecurityAutoConfiguration.class, ServletWebSecurityAutoConfiguration.class))
         .withPropertyValues("easyssf.receiver.transmitter-issuer=https://idp.example/realms/test");
+
+    /**
+     * Without the default transmitter.
+     */
+    private final WebApplicationContextRunner namedOnlyContextRunner = new WebApplicationContextRunner()
+        .withConfiguration(SSF_RECEIVER)
+        .withConfiguration(
+                AutoConfigurations.of(DispatcherServletAutoConfiguration.class, WebMvcAutoConfiguration.class,
+                        SecurityAutoConfiguration.class, ServletWebSecurityAutoConfiguration.class));
+
+    @Test
+    void namedTransmittersWorkWithoutTheDefaultOne() {
+        this.namedOnlyContextRunner
+            .withPropertyValues("easyssf.receiver.transmitters.a.transmitter-issuer=https://a.example/realms/test",
+                    "easyssf.receiver.transmitters.b.transmitter-issuer=https://b.example/realms/test",
+                    "easyssf.receiver.transmitters.b.delivery-method=poll",
+                    "easyssf.receiver.transmitters.b.poll.endpoint-url=https://b.example/realms/test/poll")
+            .run((context) -> {
+                assertThat(context).hasNotFailed()
+                    .hasSingleBean(SsfTransmitters.class)
+                    .hasSingleBean(SsfSetProcessor.class);
+                SsfTransmitters transmitters = context.getBean(SsfTransmitters.class);
+                assertThat(transmitters.all()).extracting(SsfTransmitter::getName).containsExactly("a", "b");
+                assertThat(transmitters.primary()).isEmpty();
+                assertThat(transmitters.get("b")).get().extracting(SsfTransmitter::getPoller).isNotNull();
+                // the beans belong to the default transmitter, which is not configured
+                assertThat(context).doesNotHaveBean(SsfStreamClient.class)
+                    .doesNotHaveBean(SsfReceiverStream.class)
+                    .doesNotHaveBean(SsfPoller.class)
+                    .hasSingleBean(SsfPushEndpoint.class);
+            });
+    }
+
+    @Test
+    void transmitterCustomizersApplyToEveryTransmitter() {
+        this.webContextRunner
+            .withPropertyValues("easyssf.receiver.transmitter-issuer=https://idp.example/realms/test",
+                    "easyssf.receiver.transmitters.b.transmitter-issuer=https://b.example/realms/test")
+            .withBean(SsfTransmitterCustomizer.class,
+                    () -> (builder) -> builder.pushAuthorizationHeader("Bearer " + builder.name()))
+            .run((context) -> {
+                SsfTransmitters transmitters = context.getBean(SsfTransmitters.class);
+                assertThat(transmitters.pushAuthorizationHeader("https://idp.example/realms/test"))
+                    .isEqualTo("Bearer default");
+                assertThat(transmitters.pushAuthorizationHeader("https://b.example/realms/test")).isEqualTo("Bearer b");
+            });
+    }
+
+    @Test
+    void rejectsNamedTransmitterCalledDefaultNextToTheDefaultOne() {
+        this.webContextRunner
+            .withPropertyValues("easyssf.receiver.transmitter-issuer=https://idp.example/realms/test",
+                    "easyssf.receiver.transmitters.default.transmitter-issuer=https://other.example")
+            .run((context) -> assertThat(context).hasFailed()
+                .getFailure()
+                .rootCause()
+                .hasMessageContaining("easyssf.receiver.transmitters"));
+    }
+
+    @Test
+    void rejectsTwoTransmittersWithTheSameIssuer() {
+        this.webContextRunner
+            .withPropertyValues("easyssf.receiver.transmitter-issuer=https://idp.example/realms/test",
+                    "easyssf.receiver.transmitters.twin.transmitter-issuer=https://idp.example/realms/test")
+            .run((context) -> assertThat(context).hasFailed()
+                .getFailure()
+                .rootCause()
+                .hasMessageContaining("same issuer"));
+    }
 
     @Test
     void registersConfiguredEventTypeAliases() {

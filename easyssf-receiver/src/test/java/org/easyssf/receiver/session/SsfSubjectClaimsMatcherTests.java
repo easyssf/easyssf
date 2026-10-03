@@ -27,6 +27,18 @@ class SsfSubjectClaimsMatcherTests {
     }
 
     @Test
+    void sessionSubjectMatchesOnlyAtTheIssuerOfItsUser() {
+        assertThat(matches(complex(issSub("https://other.example", "alice"), opaque("session-1")))).isFalse();
+        // no issuer named: the session identifier alone decides
+        assertThat(matches(complex(opaque("alice"), opaque("session-1")))).isTrue();
+        assertThat(matches(Map.of("session", opaque("session-1")))).isTrue();
+        assertThat(SsfSubjectClaimsMatcher.matches(
+                SsfSubject.from(complex(issSub("https://idp.example", "alice"), opaque("session-1"))),
+                Map.of("sid", "session-1"), null))
+            .isFalse();
+    }
+
+    @Test
     void userSubjectMatchesSubjectOfThatIssuer() {
         assertThat(matches(issSub("https://idp.example", "alice"))).isTrue();
         assertThat(matches(issSub("https://idp.example", "bob"))).isFalse();

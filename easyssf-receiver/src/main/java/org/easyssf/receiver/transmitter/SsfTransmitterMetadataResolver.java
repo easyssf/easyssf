@@ -81,6 +81,10 @@ public class SsfTransmitterMetadataResolver {
     /**
      * The locations the metadata is looked up at, in order.
      */
+    public String getIssuer() {
+        return this.issuer;
+    }
+
     public List<URI> getMetadataUris() {
         return this.metadataUris;
     }

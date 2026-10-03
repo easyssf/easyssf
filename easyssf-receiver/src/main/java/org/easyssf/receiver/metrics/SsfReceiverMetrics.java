@@ -74,4 +74,31 @@ public interface SsfReceiverMetrics {
     default void pollCompleted(Duration duration, boolean success) {
     }
 
+    /**
+     * A SET was received from a transmitter.
+     * @param transmitter the issuer of the transmitter, {@code null} if the SET did not
+     * tell
+     */
+    default void setReceived(String transmitter, SsfDeliveryMethod deliveryMethod, SetOutcome outcome) {
+        setReceived(deliveryMethod, outcome);
+    }
+
+    /**
+     * An event of a SET of a transmitter was handled.
+     * @param transmitter the issuer of the transmitter
+     * @param eventType the event type URI
+     */
+    default void eventHandled(String transmitter, String eventType, SsfDeliveryMethod deliveryMethod) {
+        eventHandled(eventType, deliveryMethod);
+    }
+
+    /**
+     * A transmitter was polled for SETs.
+     * @param transmitter the issuer of the transmitter, {@code null} if unknown
+     * @param success whether the transmitter answered the poll request
+     */
+    default void pollCompleted(String transmitter, Duration duration, boolean success) {
+        pollCompleted(duration, success);
+    }
+
 }

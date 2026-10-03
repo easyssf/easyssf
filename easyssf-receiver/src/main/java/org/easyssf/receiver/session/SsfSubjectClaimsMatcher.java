@@ -13,7 +13,9 @@ import org.easyssf.core.event.SsfSubjectIdentifier;
  *
  * <p>
  * An {@code iss_sub} identifier names the user at an issuer, so both have to match:
- * claims without an {@code iss} never match such a subject.
+ * claims without an {@code iss} never match such a subject. A session is matched by its
+ * {@code sid} and, if the event names the issuer of the session or of its user, by that
+ * issuer as well.
  */
 public final class SsfSubjectClaimsMatcher {
 
@@ -35,7 +37,15 @@ public final class SsfSubjectClaimsMatcher {
         }
         SsfSubjectIdentifier session = subject.session();
         if (session != null) {
-            return session.value() != null && session.value().equals(sessionId);
+            if (session.value() == null || !session.value().equals(sessionId)) {
+                return false;
+            }
+            // the session belongs to the issuer the event names, in the session
+            // identifier or the
+            // user it belongs to; session identifiers are not unique across issuers
+            String issuer = (session.issuer() != null) ? session.issuer()
+                    : ((subject.user() != null) ? subject.user().issuer() : null);
+            return issuer == null || issuer.equals(string(claims, "iss"));
         }
         SsfSubjectIdentifier user = subject.userIdentifier();
         if (user != null) {

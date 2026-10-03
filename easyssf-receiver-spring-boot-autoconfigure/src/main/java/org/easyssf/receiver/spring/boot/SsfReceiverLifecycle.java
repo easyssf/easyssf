@@ -1,52 +1,32 @@
 package org.easyssf.receiver.spring.boot;
 
-import org.easyssf.receiver.poll.SsfPoller;
-import org.easyssf.receiver.stream.SsfStreamRegistrar;
+import org.easyssf.receiver.transmitter.SsfTransmitters;
 import org.springframework.context.SmartLifecycle;
 
 /**
  * Starts the background work of the receiver once the application context is ready and
- * stops it when the context is closed: looking up or registering the stream and polling
- * the transmitter.
+ * stops it when the context is closed: looking up or registering the streams and polling
+ * the transmitters.
  */
 public class SsfReceiverLifecycle implements SmartLifecycle {
 
-    private final SsfStreamRegistrar streamRegistrar;
-
-    private final SsfPoller poller;
+    private final SsfTransmitters transmitters;
 
     private volatile boolean running;
 
-    /**
-     * @param streamRegistrar registers the stream, {@code null} if the stream is not
-     * looked up or managed
-     * @param poller polls the transmitter periodically, {@code null} if it is not polled
-     * or only on demand
-     */
-    public SsfReceiverLifecycle(SsfStreamRegistrar streamRegistrar, SsfPoller poller) {
-        this.streamRegistrar = streamRegistrar;
-        this.poller = poller;
+    public SsfReceiverLifecycle(SsfTransmitters transmitters) {
+        this.transmitters = transmitters;
     }
 
     @Override
     public void start() {
-        if (this.streamRegistrar != null) {
-            this.streamRegistrar.start();
-        }
-        if (this.poller != null) {
-            this.poller.start();
-        }
+        this.transmitters.start();
         this.running = true;
     }
 
     @Override
     public void stop() {
-        if (this.poller != null) {
-            this.poller.stop();
-        }
-        if (this.streamRegistrar != null) {
-            this.streamRegistrar.stop();
-        }
+        this.transmitters.stop();
         this.running = false;
     }
 

@@ -68,6 +68,14 @@ class SsfTokenRevocationTests {
     }
 
     @Test
+    void sessionIsRevokedAtTheIssuerOfItsUser() {
+        this.handler.handle(sessionRevoked(complex(issSub("https://other.example", "alice"), opaque("session-1"))));
+        assertThat(this.store.isSessionRevoked("https://other.example", "session-1")).isTrue();
+        assertThat(this.store.isSessionRevoked(ISSUER, "session-1")).isFalse();
+        assertThat(isValid(token("alice", "session-1", NOW))).isTrue();
+    }
+
+    @Test
     void identifierOfAnotherIssuerIsRevokedAtThatIssuer() {
         this.handler.handle(sessionRevoked(issSub("https://other.example", "alice")));
         assertThat(this.store.getSubjectRevokedAt("https://other.example", "alice")).isEqualTo(NOW);

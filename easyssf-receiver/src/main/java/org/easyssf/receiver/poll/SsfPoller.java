@@ -65,6 +65,8 @@ public class SsfPoller {
 
     private int maxEvents = 100;
 
+    private String transmitter;
+
     private volatile Instant pausedUntil = Instant.MIN;
 
     private volatile Instant lastPollAt;
@@ -113,6 +115,13 @@ public class SsfPoller {
     /**
      * Sets the maximum number of SETs fetched with one request.
      */
+    /**
+     * @param transmitter the issuer of the transmitter that is polled, for the metrics
+     */
+    public void setTransmitter(String transmitter) {
+        this.transmitter = transmitter;
+    }
+
     public void setMaxEvents(int maxEvents) {
         SsfAssert.isTrue(maxEvents > 0, "maxEvents must be positive");
         this.maxEvents = maxEvents;
@@ -286,18 +295,18 @@ public class SsfPoller {
                     : Map.of();
         }
         catch (Exception ex) {
-            this.metrics.pollCompleted(Duration.ofNanos(System.nanoTime() - started), false);
+            this.metrics.pollCompleted(this.transmitter, Duration.ofNanos(System.nanoTime() - started), false);
             throw new IllegalStateException("Poll request to " + endpoint + " failed: " + ex.getMessage(), ex);
         }
         if (!httpResponse.isSuccessful()) {
-            this.metrics.pollCompleted(Duration.ofNanos(System.nanoTime() - started), false);
+            this.metrics.pollCompleted(this.transmitter, Duration.ofNanos(System.nanoTime() - started), false);
             pauseIfAsked(httpResponse);
             throw new IllegalStateException(
                     "Poll request to " + endpoint + " failed with status " + httpResponse.status());
         }
         this.pendingAcks.removeAll(acks);
         errors.keySet().forEach(this.pendingErrors::remove);
-        this.metrics.pollCompleted(Duration.ofNanos(System.nanoTime() - started), true);
+        this.metrics.pollCompleted(this.transmitter, Duration.ofNanos(System.nanoTime() - started), true);
         return response;
     }
 

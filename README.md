@@ -122,10 +122,10 @@ Things to know:
   (Redis, ...) provide a `SsfTokenRevocationStore` bean.
 - **`easyssf.receiver.resource-server.revocation-ttl`** (default `1h`) must be at least the maximum
   lifetime of your access tokens. Revocations are forgotten after that time.
-- **Issuers**: a revocation applies to the tokens of one issuer, the `iss` of the event's `iss_sub`
-  identifier, or the transmitter for identifiers without one (`opaque`, sessions). It is matched against
-  the `iss` claim of the access token, so the transmitter must be the issuer of the tokens, or name it in
-  its events.
+- **Issuers**: a revocation applies to the tokens of one issuer: the `iss` of the event's `iss_sub`
+  identifier, for a session the issuer of the user it belongs to, else the transmitter. It is matched
+  against the `iss` claim of the access token, so the transmitter must be the issuer of the tokens, or
+  name it in its events.
 - Opaque tokens are not covered, introspection already asks the authorization server.
 
 ## Use case: OIDC client
@@ -148,9 +148,10 @@ Things to know:
 - **Spring Session / multiple instances**: the default only sees the container sessions of the
   instance that received the SET. Provide your own `SsfSessionTerminator` bean for an external session
   store.
-- **Matching**: a session by its `sid`; a user by `iss` and `sub` of an `iss_sub` identifier (both have
-  to match), by `email` (case-insensitive) or by `phone_number`; `aliases` match if any of their
-  identifiers does. Matching can be customized with a `SsfSessionMatcher` bean.
+- **Matching**: a session by its `sid`, and by the issuer of its user if the event names one; a user by
+  `iss` and `sub` of an `iss_sub` identifier (both have to match), by `email` (case-insensitive) or by
+  `phone_number`; `aliases` match if any of their identifiers does. Matching can be customized with a
+  `SsfSessionMatcher` bean.
 - `credential-change` terminates sessions for every kind of change (including a newly added
   credential). To be more selective, set `easyssf.receiver.oidc-client.user-event-types` to an empty list
   and call `SsfSessionTerminator` from your own handler.
@@ -302,6 +303,46 @@ and rejects a verification event that echoes another state, or names another str
 streamVerification.requestVerification(streamClient, receiverStream.getStreamId());
 ```
 
+## Several transmitters
+
+The settings at `easyssf.receiver.*` implicitly configure one transmitter, named `default`. An application that
+receives events from several transmitters, several identity providers, or OAuth authorizationsServers for instance, 
+configures the others under `easyssf.receiver.transmitters.<name>.*`, each with the same settings a transmitter has
+(issuer, metadata and JWK Set URLs, audience, delivery method, push header, poll, stream, token
+credentials, SET validation) and each complete on its own, nothing is inherited from the default one:
+
+```yaml
+easyssf:
+  receiver:
+    transmitter-issuer: https://idp.example/realms/employees       # the default transmitter, push
+    push:
+      expected-auth-header: Bearer ${EMPLOYEES_PUSH_SECRET}
+    transmitters:
+      customers:                                                   # a second one, polled
+        transmitter-issuer: https://idp.example/realms/customers
+        delivery-method: poll
+        stream:
+          management: receiver
+        oauth2:
+          token-uri: https://idp.example/realms/customers/protocol/openid-connect/token
+          client-id: my-receiver
+          client-secret: ${CUSTOMERS_RECEIVER_CLIENT_SECRET}
+```
+
+- The `iss` claim of a SET selects the transmitter that verifies it, so one push endpoint serves all
+  of them; each transmitter authenticates with its own `expected-auth-header`. Polled transmitters
+  are polled independently.
+- The beans (`SsfStreamClient`, `SsfReceiverStream`, `SsfPoller`, ...) belong to the default
+  transmitter, so replacing them works as before. The `SsfTransmitters` bean holds every transmitter
+  by name and by issuer, with its stream client, stream, registrar and poller; `SsfTransmitterCustomizer`
+  beans customize transmitters before they are built. Only named transmitters, without a default one,
+  are fine as well.
+- Handlers see the issuer in `eventContext.eventToken().iss()`. Revocations and sessions are scoped
+  to the issuer anyway. The metrics carry a `transmitter` tag with the issuer, and the health
+  indicator lists every transmitter under its name.
+- Dedup, the database, metrics, HTTP timeouts, the push endpoint path and the resource server and
+  OIDC client integrations are shared by all transmitters.
+
 ## Keeping state in the database
 
 By default the receiver remembers in memory which SETs it processed and which sessions and subjects
@@ -372,9 +413,9 @@ If the application has a Micrometer `MeterRegistry` (for example with
 
 | Meter | Type | Tags |
 |---|---|---|
-| `easyssf.receiver.sets` | counter | `delivery` (`push`, `poll`), `outcome` (`handled`, `duplicate`, `invalid`, `unauthenticated`, `unavailable`, `failed`) |
-| `easyssf.receiver.events` | counter | `delivery`, `event` (for example `CaepSessionRevoked`) |
-| `easyssf.receiver.poll` | timer | `outcome` (`success`, `failure`) |
+| `easyssf.receiver.sets` | counter | `transmitter` (the issuer), `delivery` (`push`, `poll`), `outcome` (`handled`, `duplicate`, `invalid`, `unauthenticated`, `unavailable`, `failed`) |
+| `easyssf.receiver.events` | counter | `transmitter`, `delivery`, `event` (for example `CaepSessionRevoked`) |
+| `easyssf.receiver.poll` | timer | `transmitter`, `outcome` (`success`, `failure`) |
 
 Switch it off with `easyssf.receiver.metrics.enabled=false`, or provide your own `SsfReceiverMetrics` bean.
 
@@ -391,14 +432,16 @@ With Spring Boot Actuator the receiver contributes the health indicator `easyssf
 
 The details name the transmitter, the delivery method, whether the metadata was retrieved, the stream and
 its registration state, and for POLL the last poll, the last successful poll and the error of the last
-poll. Switch it off with `management.health.easyssf.enabled=false`.
+poll. With [several transmitters](#several-transmitters) the details of each are listed under its
+name, with its own status. Switch it off with `management.health.easyssf.enabled=false`.
 
 ## Configuration
 
 | Property | Default | |
 |---|---|---|
 | `easyssf.receiver.enabled` | `true` | Switches the receiver off entirely when `false`. |
-| `easyssf.receiver.transmitter-issuer` | | Required. Issuer of the transmitter, must match `iss` of every SET. An `https` URL without query or fragment; `http` only on loopback addresses or with `allow-insecure-http`. |
+| `easyssf.receiver.transmitter-issuer` | | Issuer of the transmitter, must match `iss` of every SET. An `https` URL without query or fragment; `http` only on loopback addresses or with `allow-insecure-http`. Required unless transmitters are configured by name. |
+| `easyssf.receiver.transmitters.<name>.*` | | Further transmitters, see [Several transmitters](#several-transmitters): every property of a transmitter, from `transmitter-issuer` to `set-validation.*`, under its name. |
 | `easyssf.receiver.transmitter-metadata-url` | derived | By default `<host>/.well-known/ssf-configuration<issuer-path>` (SSF 1.0, section 7.2), falling back to `<issuer>/.well-known/ssf-configuration`. |
 | `easyssf.receiver.transmitter-jwks-url` | from metadata | Skips metadata discovery when set. |
 | `easyssf.receiver.allow-insecure-http` | `false` | Accepts `http` for the transmitter issuer and the endpoints it publishes on any host, with a warning on startup. For development only. |
@@ -474,7 +517,6 @@ Tested with the SSF transmitter of Keycloak 26.8 (`--features=ssf`), see the [ex
 ## Not included (yet)
 
 - WebFlux applications
-- More than one transmitter per application
 - Long polling, and a durable store for acknowledgements that were not sent yet (a SET whose
   acknowledgement is lost is delivered again and skipped as a duplicate)
 

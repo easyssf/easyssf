@@ -55,7 +55,8 @@ public class SsfTokenRevocationEventHandler implements SsfEventHandler {
         String alias = SsfEventTypes.aliasOf(eventType);
         String transmitter = eventContext.eventToken().iss();
         if (subject.sessionId() != null) {
-            String issuer = issuerOf(subject.session(), transmitter);
+            String issuer = (subject.session().issuer() != null) ? subject.session().issuer()
+                    : issuerOf(subject.user(), transmitter);
             this.revocationStore.revokeSession(issuer, subject.sessionId());
             logger.info(alias + ": revoked access tokens of session " + subject.sessionId() + " at " + issuer);
         }
@@ -79,7 +80,8 @@ public class SsfTokenRevocationEventHandler implements SsfEventHandler {
 
     /**
      * The issuer of the tokens an identifier refers to: the one of an {@code iss_sub}
-     * identifier, else the transmitter that sent the event.
+     * identifier, else the transmitter that sent the event. For a session, the issuer of
+     * the user it belongs to counts as well.
      */
     private static String issuerOf(SsfSubjectIdentifier identifier, String transmitter) {
         return (identifier != null && identifier.issuer() != null) ? identifier.issuer() : transmitter;

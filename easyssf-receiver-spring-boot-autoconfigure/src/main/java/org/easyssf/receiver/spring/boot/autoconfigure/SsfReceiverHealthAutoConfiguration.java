@@ -1,12 +1,7 @@
 package org.easyssf.receiver.spring.boot.autoconfigure;
 
-import org.easyssf.receiver.poll.SsfPoller;
-import org.easyssf.receiver.spring.boot.SsfReceiverProperties;
 import org.easyssf.receiver.spring.boot.health.SsfReceiverHealthIndicator;
-import org.easyssf.receiver.stream.SsfReceiverStream;
-import org.easyssf.receiver.stream.SsfStreamRegistrar;
-import org.easyssf.receiver.transmitter.SsfTransmitterMetadataResolver;
-import org.springframework.beans.factory.ObjectProvider;
+import org.easyssf.receiver.transmitter.SsfTransmitters;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureOrder;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -24,17 +19,14 @@ import org.springframework.core.Ordered;
 @AutoConfiguration(after = SsfReceiverAutoConfiguration.class)
 @AutoConfigureOrder(Ordered.LOWEST_PRECEDENCE)
 @ConditionalOnClass(HealthIndicator.class)
-@ConditionalOnBean(SsfTransmitterMetadataResolver.class)
+@ConditionalOnBean(SsfTransmitters.class)
 @ConditionalOnEnabledHealthIndicator("easyssf")
 public final class SsfReceiverHealthAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(name = "easyssfHealthIndicator")
-    SsfReceiverHealthIndicator easyssfHealthIndicator(SsfReceiverProperties properties,
-            SsfTransmitterMetadataResolver metadataResolver, SsfReceiverStream receiverStream,
-            ObjectProvider<SsfStreamRegistrar> streamRegistrar, ObjectProvider<SsfPoller> poller) {
-        return new SsfReceiverHealthIndicator(properties.getTransmitterIssuer(), metadataResolver, receiverStream,
-                streamRegistrar.getIfAvailable(), poller.getIfAvailable());
+    SsfReceiverHealthIndicator easyssfHealthIndicator(SsfTransmitters transmitters) {
+        return new SsfReceiverHealthIndicator(transmitters);
     }
 
 }
