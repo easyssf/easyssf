@@ -121,6 +121,10 @@ pins a released version. Consequences for a change here:
   Branches are named `gh-<issue>-<topic>`. Commits have a short imperative subject, a wrapped
   body that says what and why, and are signed off (`git commit -s`).
 - `scratch/` is ignored by git: put plans, notes and throwaway scripts there, not into the tree.
+- CI (`.github/workflows/ci.yml`) runs the cheap checks first: sign-off, then a link and spell check
+  of the Markdown files for documentation changes, then formatting and the framework-free modules;
+  the Spring Boot, multi-JDK and PostgreSQL jobs follow only when those pass. A change that touches
+  only `.md` files runs no build at all. `status` is the required check.
 - Do not commit, push, tag or publish unless asked. Do not run `docker compose down -v`, remove
   volumes or networks you did not create, or start the examples' Keycloak without checking for an
   existing compose project of the same name (see the examples' `AGENTS.md`).

@@ -1,0 +1,25 @@
+# Link checker configuration for the Markdown files, run by the docs job of ci.yml:
+#   lychee --config .lychee.toml '**/*.md'
+
+no_progress = true
+# GitHub anchors such as README.md#build are checked as well
+include_fragments = "anchor-only"
+# a rate-limited server is not a broken link
+accept = ["200..=206", "429"]
+max_retries = 2
+timeout = 20
+exclude_path = ["target", "scratch", "node_modules"]
+exclude = [
+  # placeholders and local services used in the examples and the conformance tests
+  "^https?://localhost",
+  "^https?://127\\.0\\.0\\.1",
+  "^https?://host\\.docker\\.internal",
+  "^https?://host\\.testcontainers\\.internal",
+  "^https?://localhost\\.emobix\\.co\\.uk",
+  "^https?://[^/]*\\.example(/|:|$)",
+  "^https?://scim\\.example\\.com",
+  "^https?://<",
+  "^mailto:",
+  # requires a logged-in GitHub user
+  "^https://github\\.com/easyssf/easyssf/security/advisories/new$",
+]

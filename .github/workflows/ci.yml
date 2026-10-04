@@ -1,16 +1,25 @@
-# Builds every module and runs the unit and integration tests. The conformance tests against the
-# OpenID conformance suite are tagged and excluded by the normal build, see conformance.yml.
+# Builds and tests every push to main and every pull request, cheap checks first:
+#
+#   changes ─┬─ sign-off (pull requests)
+#            ├─ docs       link and spell check of the Markdown files, when any changed
+#            └─ build      formatting, the framework-free modules and their tests on Java 21
+#                 ├─ spring     the Spring Boot modules on Java 21
+#                 ├─ jdk        every module on Java 25, and on the newest JDK without failing the build
+#                 ├─ database   the JDBC stores on PostgreSQL
+#                 └─ publish-snapshot (main only)
+#   status     the one check to require in branch protection
+#
+# A change that touches only documentation runs sign-off and docs; a failure in build stops
+# everything behind it. The conformance tests against the OpenID conformance suite are tagged and
+# excluded here, see conformance.yml.
 name: CI
 
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
-  # Later: run for every pull request. Before enabling, decide who may trigger a run under
-  # Settings > Actions > General > "Fork pull request workflows" / "Approval for running
-  # workflows from outside collaborators".
-  # pull_request:
-  #   branches: [main]
 
 permissions:
   contents: read
@@ -19,21 +28,157 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    shell: bash
+
+env:
+  MAVEN_ARGS: -B --no-transfer-progress
+
 jobs:
+  # Which kind of files the change touches, to skip what cannot be affected.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+      docs: ${{ steps.classify.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - id: classify
+        name: Classify the changed files
+        run: |
+          case "${{ github.event_name }}" in
+            pull_request)
+              .github/scripts/changed-files.sh "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" | tee -a "$GITHUB_OUTPUT" ;;
+            push)
+              .github/scripts/changed-files.sh "${{ github.event.before }}" "${{ github.sha }}" | tee -a "$GITHUB_OUTPUT" ;;
+            *)
+              .github/scripts/changed-files.sh | tee -a "$GITHUB_OUTPUT" ;;
+          esac
+
+  # Every commit of a pull request carries a Developer Certificate of Origin sign-off.
+  sign-off:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check the Signed-off-by trailers
+        run: .github/scripts/check-signoff.sh "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
+
+  # Links and spelling of the Markdown files.
+  docs:
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --config .lychee.toml '**/*.md'
+          fail: true
+
+      - name: Check the spelling
+        uses: crate-ci/typos@v1
+        with:
+          files: '**/*.md'
+
+  # The cheap part of the build: formatting, then the framework-free modules with their tests.
+  # Their jars are handed to the jobs behind, which do not build them again.
   build:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - name: Check the formatting
+        run: ./mvnw spotless:check
+
+      - name: Build and test the framework-free modules
+        run: ./mvnw install -pl easyssf-core,easyssf-test,easyssf-receiver,easyssf-receiver-jdbc,easyssf-test-conformance
+
+      - name: Hand the jars to the jobs behind
+        uses: actions/upload-artifact@v7
+        with:
+          name: easyssf-jars
+          path: ~/.m2/repository/org/easyssf/
+          retention-days: 1
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports-build
+          path: '**/target/surefire-reports/*.xml'
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # The Spring Boot modules, on the jars of the build job.
+  spring:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: easyssf-jars
+          path: ~/.m2/repository/org/easyssf/
+
+      - name: Build and test the Spring Boot modules
+        run: >-
+          ./mvnw verify
+          -pl easyssf-receiver-spring-boot-autoconfigure,easyssf-receiver-spring-boot-starter,easyssf-receiver-spring-boot-examples,easyssf-receiver-spring-boot-examples/example-oidc-client,easyssf-receiver-spring-boot-examples/example-resource-server,easyssf-receiver-spring-boot-conformance-tests
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports-spring
+          path: '**/target/surefire-reports/*.xml'
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # Every module on the other JDKs. The newest one does not fail the build until Mockito's Byte
+  # Buddy supports its class file version without the experimental switch.
+  jdk:
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        java: [21, 25]
-        experimental: [false]
         include:
-          # the newest JDK: a failure does not fail the build until Mockito's Byte Buddy
-          # supports its class file version without the experimental switch
+          - java: 25
+            experimental: false
           - java: 27
             experimental: true
-    name: Java ${{ matrix.java }}
+    name: jdk (Java ${{ matrix.java }})
     continue-on-error: ${{ matrix.experimental }}
     steps:
       - uses: actions/checkout@v7
@@ -45,7 +190,7 @@ jobs:
           cache: maven
 
       - name: Build and test
-        run: ./mvnw -B --no-transfer-progress verify -Dbytebuddy.experimental=${{ matrix.experimental }}
+        run: ./mvnw verify -Dbytebuddy.experimental=${{ matrix.experimental }}
 
       - name: Upload test reports
         if: always()
@@ -58,6 +203,7 @@ jobs:
 
   # The JDBC stores against PostgreSQL in Docker, see the database-tests profile of easyssf-receiver-jdbc.
   database:
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -69,11 +215,13 @@ jobs:
           java-version: 21
           cache: maven
 
-      - name: Build the modules the stores need
-        run: ./mvnw -B --no-transfer-progress -DskipTests -pl easyssf-receiver-jdbc -am install
+      - uses: actions/download-artifact@v8
+        with:
+          name: easyssf-jars
+          path: ~/.m2/repository/org/easyssf/
 
       - name: Test the stores on PostgreSQL
-        run: ./mvnw -B --no-transfer-progress -pl easyssf-receiver-jdbc -Pdatabase-tests verify
+        run: ./mvnw -pl easyssf-receiver-jdbc -Pdatabase-tests verify
 
       - name: Upload test reports
         if: always()
@@ -87,7 +235,7 @@ jobs:
   # Publishes the snapshots of main to the Central snapshot repository once the tests pass. Off until
   # the repository variable PUBLISH_SNAPSHOTS is "true" (Settings > Secrets and variables > Actions).
   publish-snapshot:
-    needs: build
+    needs: [build, spring, jdk, database]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.PUBLISH_SNAPSHOTS == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -109,12 +257,31 @@ jobs:
         # only a snapshot version: on release day main carries the release version for one
         # commit, and that one is published by release.yml from the tag
         run: |
-          version=$(./mvnw -q -N --no-transfer-progress org.apache.maven.plugins:maven-help-plugin:3.5.1:evaluate -Dexpression=project.version -DforceStdout)
+          version=$(./mvnw -q -N org.apache.maven.plugins:maven-help-plugin:3.5.1:evaluate -Dexpression=project.version -DforceStdout)
           case "$version" in
-            *-SNAPSHOT) ./mvnw -B --no-transfer-progress -Prelease -DskipTests deploy ;;
+            *-SNAPSHOT) ./mvnw -Prelease -DskipTests deploy ;;
             *) echo "version $version is a release, nothing to publish from main" ;;
           esac
         env:
           CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
           CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+  # The one check for branch protection: green when every job that had to run succeeded. Jobs the
+  # change did not need are skipped and count as green; publish-snapshot is not a check.
+  status:
+    if: always()
+    needs: [changes, sign-off, docs, build, spring, jdk, database]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check the results
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          failed=$(echo "$RESULTS" | jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | .key')
+          if [ -n "$failed" ]; then
+            echo "::error::failed or cancelled: $(echo "$failed" | paste -sd, -)"
+            exit 1
+          fi

@@ -13,6 +13,20 @@ the code is written and stays findable afterwards. Open the issue first if there
 in the description of the pull request (`Closes #123`). The pull requests Dependabot opens are the
 exception.
 
+`main` is protected by a [ruleset](.github/rulesets/main.json) (Settings > Rules): every change
+arrives through a pull request whose `status` check of the CI is green, force pushes and deletion are
+blocked, and the head branch is deleted on merge. No review is required while the project has one
+maintainer. Repository admins may bypass the ruleset, which the release steps below use for the
+version commits; everything else goes through a pull request as well. The JSON file in the
+repository is the documentation of the ruleset, update it when the rules change (the Rules page can
+import it).
+
+Every commit carries a [Developer Certificate of Origin](https://developercertificate.org) sign-off,
+the `Signed-off-by: Name <email>` trailer that `git commit -s` adds: it states that you have the right
+to submit the change under the project's license. The CI checks it for every commit of a pull request
+(merge commits and Dependabot's commits excepted) and tells you how to add missing ones
+(`git rebase --signoff`).
+
 ## Build artifacts
 
 - **Published POMs are flattened** (`flatten-maven-plugin`, mode `oss`): the POM that goes into a
@@ -47,13 +61,25 @@ exception.
 
 GitHub Actions, see [`.github/workflows`](.github/workflows):
 
-- [`ci.yml`](.github/workflows/ci.yml) builds and tests every module on a push to `main` (and on
-  demand), on Java 21 and 25, and on the newest JDK (27) as a job that does not fail the build; it
-  passes `-Dbytebuddy.experimental=true` to the tests in case Mockito's Byte Buddy does not know the
-  class file version yet. It is the normal build, so the conformance tests are not part of it. To run
-  it for pull requests as well, enable the `pull_request` trigger in the file.
-- `ci.yml` also runs the database tests of `easyssf-receiver-jdbc` against PostgreSQL, in a job of
-  its own.
+- [`ci.yml`](.github/workflows/ci.yml) runs for every push to `main` and every pull request, the
+  cheap checks first so that a failure costs little:
+  1. `changes` classifies the files the change touches; `sign-off` checks the DCO trailers of a pull
+     request; `docs` checks the links ([lychee](https://github.com/lycheeverse/lychee),
+     [`.lychee.toml`](.lychee.toml)) and the spelling ([typos](https://github.com/crate-ci/typos),
+     [`_typos.toml`](_typos.toml)) of the Markdown files when any changed.
+  2. `build`, only when something but documentation changed: the formatting check, then the
+     framework-free modules with their tests on Java 21. Its jars go to the jobs behind as an
+     artifact, so they do not build them again.
+  3. Behind `build`: `spring` (the Spring Boot modules on Java 21), `jdk` (every module on Java 25,
+     and on the newest JDK as a job that does not fail the build; it passes
+     `-Dbytebuddy.experimental=true` in case Mockito's Byte Buddy does not know the class file
+     version yet), and `database` (the stores of `easyssf-receiver-jdbc` on PostgreSQL).
+  4. `status` is green when every job that had to run succeeded; skipped jobs count as green. It is
+     the one check to require in the branch protection of `main`, the others come and go with the
+     change.
+  A pull request from a fork runs with a read-only token and without secrets. Who may trigger a run
+  is decided under Settings > Actions > General ("Fork pull request workflows", "Approval for running
+  workflows from outside collaborators"). The conformance tests are not part of it.
 - [`release.yml`](.github/workflows/release.yml) publishes a release, see below.
 - [`conformance.yml`](.github/workflows/conformance.yml) runs the four conformance plans against the
   suite, one job per plan, on demand. The suite and nginx images are the ones `ConformanceSettings` of
@@ -85,6 +111,7 @@ To release version `X.Y.Z` from `main`:
    section of `CHANGELOG.md` into the section of `X.Y.Z` with the date; the workflow publishes
    that section as the release notes and fails without it.
 2. Commit, tag `vX.Y.Z` and push the tag: `git tag -s vX.Y.Z -m "X.Y.Z" && git push origin vX.Y.Z`.
+   The push to `main` uses the admin bypass of the ruleset.
    The workflow checks that the tag matches the POM version, runs the tests, signs, publishes, and
    creates the GitHub release with generated notes and the SBOMs attached. The artifacts are on
    Central a few minutes after the workflow finishes; search indexes them within hours.
