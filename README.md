@@ -69,6 +69,8 @@ Most of this document describes the Spring Boot starter. For other environments 
   `session-revoked` event.
 - **OIDC client**: terminates local sessions on CAEP `session-revoked` (by `sid` or user) and
   `credential-change` (all sessions of the user).
+- **SCIM Events** (RFC 9967): the event types and the `scim` subject, and an `SsfScimEventHandler`
+  that hands you typed create, patch, put, delete, activate and deactivate events.
 
 ## Getting started
 
@@ -156,7 +158,9 @@ Things to know:
   store.
 - **Matching**: a session by its `sid`, and by the issuer of its user if the event names one; a user by
   `iss` and `sub` of an `iss_sub` identifier (both have to match), by `email` (case-insensitive) or by
-  `phone_number`; `aliases` match if any of their identifiers does. Matching can be customized with a
+  `phone_number`; `aliases` match if any of their identifiers does; a `scim` resource by the attributes
+  and claims of `easyssf.receiver.oidc-client.scim-attribute-claims`, by default `externalId` and `id`
+  against `sub` and `userName` against `preferred_username`. Matching can be customized with a
   `SsfSessionMatcher` bean.
 - `credential-change` terminates sessions for every kind of change (including a newly added
   credential). To be more selective, set `easyssf.receiver.oidc-client.user-event-types` to an empty list
@@ -188,7 +192,7 @@ Handlers must be idempotent. If a handler throws, the SET is not acknowledged an
 expected to deliver it again, in which case all handlers run again.
 
 `SsfSubject` is the `sub_id` of the SET: a simple subject identifier (RFC 9493: `iss_sub`, `email`,
-`opaque`, `account`, `phone_number`, `did`, `uri`, `aliases`) or a complex subject whose members
+`opaque`, `account`, `phone_number`, `did`, `uri`, `aliases`; RFC 9967: `scim`) or a complex subject whose members
 (`user`, `session`, `device`, `tenant`, `application`, `org_unit`, `group`) are identifiers.
 `subject.userIdentifier()` and `subject.session()` are the members the receiver acts on,
 `subject.member("device")` gives the others, and `subject.raw()` the claim as received. Each
@@ -209,6 +213,76 @@ is rejected (`invalid_request`) unless the member is one the application underst
 these are the members `SsfSubject` gives access to: `user`, `session`, `device`, `application`,
 `tenant`, `org_unit` and `group`. If the application interprets others, or fewer, list them in
 `easyssf.receiver.understood-subject-members` (or `SsfSetProcessor.setUnderstoodSubjectMembers`).
+
+## SCIM Events
+
+[RFC 9967](https://www.rfc-editor.org/rfc/rfc9967) delivers provisioning changes of a SCIM service
+provider as SETs, over the same push and poll delivery. They pass the receiver like any other SET:
+RFC 9967 requires the top-level `sub_id` that the strict SSF 1.0 mode checks for. What is new is the
+vocabulary, and easyssf knows it:
+
+- The event types under `urn:ietf:params:scim:event:` with the aliases `ScimFeedAdd`, `ScimFeedRemove`,
+  `ScimProvCreateNotice`, `ScimProvCreateFull`, `ScimProvPatchNotice`, `ScimProvPatchFull`,
+  `ScimProvPutNotice`, `ScimProvPutFull`, `ScimProvDelete`, `ScimProvActivate`, `ScimProvDeactivate` and
+  `ScimMiscAsyncResponse`, usable in `events-requested` and wherever else an event type is named.
+- The `scim` subject identifier: `SsfScimSubject` gives you the relative `uri()` of the resource, its
+  `resourceType()` (`Users`, `Groups`), `id()`, `externalId()` and any further `attribute("userName")`.
+- `SsfScimEvent`, the typed payload: `operation()`, `isFull()` with `data()` (the resource, or the
+  `PatchOp`), `isNotice()` with `attributes()` (the paths that changed), `version()` (the ETag), and for
+  an asynchronous response `method()`, `status()` and `response()`. The `txn` that groups the SETs of a
+  transaction is `eventToken().txn()`.
+
+`SsfScimEventHandler` dispatches every SCIM Event of a SET to the method of its operation; override the
+ones you act on:
+
+```java
+@Component
+class ProvisioningHandler extends SsfScimEventHandler {
+
+    @Override
+    protected void onCreate(SsfScimEvent event, SsfEventContext eventContext) {
+        if (event.isFull() && "Users".equals(event.subject().resourceType())) {
+            users.create(event.subject().id(), event.data());
+        }
+        // a notice event only names event.attributes(): fetch the resource with a SCIM GET of
+        // event.subject().uri() at the service provider if you need its state
+    }
+
+    @Override
+    protected void onDeactivate(SsfScimEvent event, SsfEventContext eventContext) {
+        users.disable(event.subject().id());
+    }
+
+}
+```
+
+`event.subject()` is `null` if the SET carries a subject that is not a `scim` identifier, which RFC
+9967 does not allow but a handler should expect. The handler methods have to be idempotent like any
+`SsfEventHandler`.
+
+Deactivation and deletion usually mean the user may no longer be logged in. To end their local sessions
+with the OIDC client support, add the events to the user events. A `scim` subject is matched with the
+logged-in user by comparing attributes of the resource with claims: by default `externalId` and `id`
+(the `id` attribute, or the last segment of the `uri`) with `sub`, and `userName` with
+`preferred_username`. If your SCIM service provider and your OpenID Provider share other identifiers,
+configure the pairs; a multi-valued attribute such as `emails` matches if any of its values does, and
+values compared with the `email` claim match ignoring case:
+
+```yaml
+easyssf:
+  receiver:
+    oidc-client:
+      user-event-types: CaepCredentialChange, ScimProvDeactivate, ScimProvDelete
+      scim-attribute-claims:
+        externalId: sub
+        emails: email
+```
+
+Without Spring Boot, pass the pairs to `SsfSubjectClaimsMatcher.matches(subject, claims, name, pairs)`;
+`SsfSubjectClaimsMatcher.DEFAULT_SCIM_ATTRIBUTE_CLAIMS` is the default.
+
+The receiver does not call the SCIM service provider itself: fetching a resource after a notice event,
+the asynchronous SCIM requests of RFC 9967 and the `Set-Txn` header are the business of a SCIM client.
 
 ## Push endpoint
 
@@ -514,6 +588,7 @@ name, with its own status. Switch it off with `management.health.easyssf.enabled
 | `easyssf.receiver.oidc-client.enabled` | `true` | |
 | `easyssf.receiver.oidc-client.session-event-types` | `CaepSessionRevoked` | Events that terminate the session (or user sessions) of their subject. |
 | `easyssf.receiver.oidc-client.user-event-types` | `CaepCredentialChange` | Events that terminate all sessions of their subject's user. |
+| `easyssf.receiver.oidc-client.scim-attribute-claims.*` | `externalId: sub`, `id: sub`, `userName: preferred_username` | Attributes of the `scim` subject of a SCIM Event and the claim of the logged-in user each is compared with. |
 
 Beans you can replace: `SsfSetVerifier`, `SsfTransmitterMetadataResolver`, `SsfJtiDedupStore`,
 `SsfTokenRevocationStore`, `SsfRevokedTokenValidator`, `SsfSessionTerminator`, `SsfSessionMatcher`,
@@ -599,6 +674,8 @@ Ready-made pieces for the common reactions:
   access tokens of revoked sessions and users.
 - `SsfSessionTerminationEventHandler` + your `SsfSessionTerminator` to end local sessions;
   `SsfSubjectClaimsMatcher` tells whether the subject of an event matches the claims of a user.
+- `SsfScimEventHandler` to react to SCIM Events (RFC 9967) by operation, with `SsfScimEvent` and
+  `SsfScimSubject` from `easyssf-core` for the payload and the resource.
 - `SsfStreamClient` and `SsfStreamRegistrar` for stream management,
   `ClientCredentialsSsfTransmitterTokenProvider` for the access token, `MicrometerSsfReceiverMetrics`
   for metrics.

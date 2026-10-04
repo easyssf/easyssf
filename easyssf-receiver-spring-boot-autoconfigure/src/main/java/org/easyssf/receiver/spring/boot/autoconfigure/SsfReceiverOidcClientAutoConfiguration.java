@@ -39,8 +39,8 @@ public final class SsfReceiverOidcClientAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(SsfSessionMatcher.class)
-    OidcSsfSessionMatcher ssfSessionMatcher() {
-        return new OidcSsfSessionMatcher();
+    OidcSsfSessionMatcher ssfSessionMatcher(SsfReceiverProperties properties) {
+        return new OidcSsfSessionMatcher(properties.getOidcClient().getScimAttributeClaims());
     }
 
     @Bean

@@ -59,6 +59,27 @@ public final class SsfSubjectIdentifiers {
     }
 
     /**
+     * A SCIM resource (RFC 9967), the subject of SCIM Events.
+     * @param uri the relative path of the resource, for example {@code /Users/2b2f880a}
+     */
+    public static Map<String, Object> scim(String uri) {
+        return identifier("scim", "uri", uri);
+    }
+
+    /**
+     * A SCIM resource (RFC 9967), the subject of SCIM Events.
+     * @param uri the relative path of the resource, for example {@code /Users/2b2f880a}
+     * @param externalId the {@code externalId} of the resource, may be {@code null}
+     */
+    public static Map<String, Object> scim(String uri, String externalId) {
+        Map<String, Object> identifier = scim(uri);
+        if (externalId != null) {
+            identifier.put("externalId", externalId);
+        }
+        return identifier;
+    }
+
+    /**
      * A subject with several identifiers that all name it.
      */
     public static Map<String, Object> aliases(List<Map<String, Object>> identifiers) {
