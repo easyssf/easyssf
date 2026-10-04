@@ -16,6 +16,7 @@ import static org.easyssf.core.event.SsfSubjectIdentifiers.email;
 import static org.easyssf.core.event.SsfSubjectIdentifiers.issSub;
 import static org.easyssf.core.event.SsfSubjectIdentifiers.opaque;
 import static org.easyssf.core.event.SsfSubjectIdentifiers.phoneNumber;
+import static org.easyssf.core.event.SsfSubjectIdentifiers.scim;
 import static org.easyssf.core.event.SsfSubjectIdentifiers.uri;
 
 class SsfSubjectTests {
@@ -93,6 +94,19 @@ class SsfSubjectTests {
         assertThat(SsfSubject.from(did("did:example:123")).userIdentifier().value()).isEqualTo("did:example:123");
         assertThat(SsfSubject.from(uri("https://example.com/alice")).userIdentifier().value())
             .isEqualTo("https://example.com/alice");
+    }
+
+    @Test
+    void scimResourceOfRfc9967NamesTheUserByItsUri() {
+        SsfSubject subject = SsfSubject.from(scim("/Users/2b2f880a", "jdoe"));
+        assertThat(subject.isEmpty()).isFalse();
+        assertThat(subject.hasUser()).isTrue();
+        assertThat(subject.userIdentifier().isScim()).isTrue();
+        assertThat(subject.userIdentifier().value()).isEqualTo("/Users/2b2f880a");
+        assertThat(subject.userIdentifier().claim("externalId")).isEqualTo("jdoe");
+        assertThat(subject.subject()).isNull();
+        assertThat(scim("/Users/2b2f880a")).doesNotContainKey("externalId");
+        assertThat(scim("/Users/2b2f880a", null)).doesNotContainKey("externalId");
     }
 
     @Test

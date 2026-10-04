@@ -1,5 +1,6 @@
 package org.easyssf.receiver.session;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -14,6 +15,7 @@ import static org.easyssf.core.event.SsfSubjectIdentifiers.email;
 import static org.easyssf.core.event.SsfSubjectIdentifiers.issSub;
 import static org.easyssf.core.event.SsfSubjectIdentifiers.opaque;
 import static org.easyssf.core.event.SsfSubjectIdentifiers.phoneNumber;
+import static org.easyssf.core.event.SsfSubjectIdentifiers.scim;
 
 class SsfSubjectClaimsMatcherTests {
 
@@ -96,6 +98,74 @@ class SsfSubjectClaimsMatcherTests {
         assertThat(matches(aliases(List.of(issSub("https://other.example", "alice"), email("alice@example.com")))))
             .isTrue();
         assertThat(matches(aliases(List.of(issSub("https://other.example", "alice"), email("bob@example.com")))))
+            .isFalse();
+    }
+
+    @Test
+    void scimResourceMatchesByExternalIdOrIdAgainstTheSubject() {
+        assertThat(matches(scim("/Users/2b2f880a", "alice"))).isTrue();
+        assertThat(matches(scim("/Users/alice"))).isTrue();
+        assertThat(matches(scim("/Users/2b2f880a", "bob"))).isFalse();
+        assertThat(matches(scim("/Users/2b2f880a"))).isFalse();
+        assertThat(SsfSubjectClaimsMatcher.matches(SsfSubject.from(scim("/Users/2b2f880a", "alice")),
+                Map.of("iss", "https://idp.example"), "alice"))
+            .isTrue();
+        assertThat(SsfSubjectClaimsMatcher.matches(SsfSubject.from(scim("/Users/2b2f880a")), Map.of(), null)).isFalse();
+    }
+
+    @Test
+    void scimResourceMatchesByUserNameAgainstThePreferredUsername() {
+        Map<String, Object> resource = new HashMap<>(scim("/Users/2b2f880a"));
+        resource.put("userName", "alice.example");
+        Map<String, Object> claims = Map.of("sub", "2b2f880a-other", "preferred_username", "alice.example");
+        assertThat(SsfSubjectClaimsMatcher.matches(SsfSubject.from(resource), claims, null)).isTrue();
+        assertThat(SsfSubjectClaimsMatcher.matches(SsfSubject.from(resource), CLAIMS, null)).isFalse();
+    }
+
+    @Test
+    void scimAttributeClaimsAreConfigurable() {
+        Map<String, Object> resource = new HashMap<>(scim("/Users/2b2f880a", "alice@example.com"));
+        resource.put("userName", "alice");
+        Map<String, String> byExternalIdAsEmail = Map.of("externalId", "email");
+        assertThat(SsfSubjectClaimsMatcher.matches(SsfSubject.from(resource), CLAIMS, null, byExternalIdAsEmail))
+            .isTrue();
+        // the email claim is compared ignoring case, like an email identifier
+        assertThat(SsfSubjectClaimsMatcher.matches(SsfSubject.from(resource), Map.of("email", "Alice@Example.com"),
+                null, byExternalIdAsEmail))
+            .isTrue();
+        // only the configured pairs count: userName is not compared with sub
+        assertThat(SsfSubjectClaimsMatcher.matches(SsfSubject.from(resource), CLAIMS, null, byExternalIdAsEmail))
+            .isTrue();
+        assertThat(SsfSubjectClaimsMatcher.matches(SsfSubject.from(resource), CLAIMS, null, Map.of("userName", "sub")))
+            .isTrue();
+        assertThat(SsfSubjectClaimsMatcher.matches(SsfSubject.from(resource), CLAIMS, null, Map.of())).isFalse();
+        assertThat(SsfSubjectClaimsMatcher.matches(SsfSubject.from(resource), CLAIMS, null,
+                Map.of("id", "sub", "externalId", "sub")))
+            .isFalse();
+        // the sub falls back to the name, as for the other formats
+        assertThat(SsfSubjectClaimsMatcher.matches(SsfSubject.from(resource), Map.of(), "alice",
+                Map.of("userName", "sub")))
+            .isTrue();
+    }
+
+    @Test
+    void multiValuedScimAttributesMatchByAnyValue() {
+        Map<String, Object> resource = new HashMap<>(scim("/Users/2b2f880a"));
+        resource.put("emails", List.of(Map.of("type", "work", "value", "ALICE@example.com", "primary", true),
+                Map.of("type", "home", "value", "alice@home.example"), "alice@plain.example", 42));
+        Map<String, String> byEmails = Map.of("emails", "email");
+        assertThat(SsfSubjectClaimsMatcher.matches(SsfSubject.from(resource), CLAIMS, null, byEmails)).isTrue();
+        assertThat(SsfSubjectClaimsMatcher.matches(SsfSubject.from(resource), Map.of("email", "alice@plain.example"),
+                null, byEmails))
+            .isTrue();
+        assertThat(SsfSubjectClaimsMatcher.matches(SsfSubject.from(resource), Map.of("email", "bob@example.com"), null,
+                byEmails))
+            .isFalse();
+        // an attribute of another type, or absent, matches nothing
+        resource.put("emails", Map.of("value", "alice@example.com"));
+        assertThat(SsfSubjectClaimsMatcher.matches(SsfSubject.from(resource), CLAIMS, null, byEmails)).isFalse();
+        assertThat(SsfSubjectClaimsMatcher.matches(SsfSubject.from(resource), CLAIMS, null,
+                Map.of("phoneNumbers", "phone_number")))
             .isFalse();
     }
 

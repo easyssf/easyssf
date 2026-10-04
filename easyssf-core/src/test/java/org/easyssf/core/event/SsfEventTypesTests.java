@@ -20,6 +20,15 @@ class SsfEventTypesTests {
     }
 
     @Test
+    void scimEventTypesAreUrnsWithAliases() {
+        assertThat(SsfEventTypes.resolve("ScimProvCreateFull"))
+            .isEqualTo("urn:ietf:params:scim:event:prov:create:full");
+        assertThat(SsfEventTypes.aliasOf(SsfEventTypes.SCIM_PROV_DEACTIVATE)).isEqualTo("ScimProvDeactivate");
+        assertThat(SsfEventTypes.aliasOf(SsfEventTypes.SCIM_MISC_ASYNC_RESPONSE)).isEqualTo("ScimMiscAsyncResponse");
+        assertThat(SsfEventTypes.aliases()).containsEntry("ScimFeedRemove", SsfEventTypes.SCIM_FEED_REMOVE);
+    }
+
+    @Test
     void registeredAliasResolvesLikeABuiltInOne() {
         SsfEventTypes.registerAlias("AcmeLogin", ACME_LOGIN);
         assertThat(SsfEventTypes.resolve("AcmeLogin")).isEqualTo(ACME_LOGIN);

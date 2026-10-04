@@ -16,6 +16,7 @@ module org.easyssf.receiver {
     exports org.easyssf.receiver.poll;
     exports org.easyssf.receiver.push;
     exports org.easyssf.receiver.revocation;
+    exports org.easyssf.receiver.scim;
     exports org.easyssf.receiver.session;
     exports org.easyssf.receiver.set;
     exports org.easyssf.receiver.stream;

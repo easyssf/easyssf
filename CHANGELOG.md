@@ -6,6 +6,18 @@ The notable changes of every release. The section of a version is the text of it
 
 ## [Unreleased]
 
+### Added
+
+- SCIM Events (RFC 9967): the event types under `urn:ietf:params:scim:event:` with aliases
+  (`ScimProvCreateFull`, `ScimProvDeactivate`, ...), the `scim` subject identifier format with
+  `SsfScimSubject` for the resource it names, `SsfScimEvent` for the typed payload (`data`,
+  `attributes`, `version`, the asynchronous response) and `SsfScimEventHandler`, which dispatches
+  the SCIM Events of a SET to a method per operation. `SsfSubjectClaimsMatcher` matches a `scim`
+  resource with a logged-in user by configurable pairs of SCIM attribute and claim
+  (`easyssf.receiver.oidc-client.scim-attribute-claims`), by default `externalId` and `id` against
+  `sub` and `userName` against `preferred_username`, so `ScimProvDeactivate` and `ScimProvDelete`
+  can terminate sessions.
+
 ## [0.1.0] - 2026-10-03
 
 The first release: a receiver for the OpenID Shared Signals Framework 1.0, as a framework-free

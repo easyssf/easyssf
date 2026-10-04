@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.easyssf.core.event.SsfSubject;
+import org.easyssf.receiver.session.SsfSubjectClaimsMatcher;
 import org.easyssf.receiver.transmitter.SsfTransmitter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -475,6 +476,15 @@ public class SsfReceiverProperties extends SsfTransmitterProperties {
          */
         private List<String> userEventTypes = new ArrayList<>(List.of("CaepCredentialChange"));
 
+        /**
+         * Attributes of the 'scim' subject of a SCIM Event (RFC 9967) and the claim of
+         * the logged-in user each is compared with, e.g. 'externalId: sub'. A
+         * multi-valued attribute such as 'emails' matches if any of its values does. The
+         * subject matches if any pair does.
+         */
+        private Map<String, String> scimAttributeClaims = new LinkedHashMap<>(
+                SsfSubjectClaimsMatcher.DEFAULT_SCIM_ATTRIBUTE_CLAIMS);
+
         public boolean isEnabled() {
             return this.enabled;
         }
@@ -497,6 +507,14 @@ public class SsfReceiverProperties extends SsfTransmitterProperties {
 
         public void setUserEventTypes(List<String> userEventTypes) {
             this.userEventTypes = userEventTypes;
+        }
+
+        public Map<String, String> getScimAttributeClaims() {
+            return this.scimAttributeClaims;
+        }
+
+        public void setScimAttributeClaims(Map<String, String> scimAttributeClaims) {
+            this.scimAttributeClaims = scimAttributeClaims;
         }
 
     }

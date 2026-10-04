@@ -6,9 +6,9 @@ import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Event type URIs defined by OpenID SSF, CAEP and RISC, together with short aliases (for
- * example {@code CaepSessionRevoked}) that can be used wherever an event type is
- * expected.
+ * Event type URIs defined by OpenID SSF, CAEP and RISC, and by SCIM Events (RFC 9967),
+ * together with short aliases (for example {@code CaepSessionRevoked}) that can be used
+ * wherever an event type is expected.
  */
 public final class SsfEventTypes {
 
@@ -17,6 +17,8 @@ public final class SsfEventTypes {
     private static final String CAEP = "https://schemas.openid.net/secevent/caep/event-type/";
 
     private static final String RISC = "https://schemas.openid.net/secevent/risc/event-type/";
+
+    private static final String SCIM = "urn:ietf:params:scim:event:";
 
     public static final String SSF_STREAM_VERIFICATION = SSF + "verification";
 
@@ -64,6 +66,74 @@ public final class SsfEventTypes {
 
     public static final String RISC_RECOVERY_INFORMATION_CHANGED = RISC + "recovery-information-changed";
 
+    /**
+     * SCIM Events (RFC 9967, section 2.3.1): the resource was added to the event feed.
+     */
+    public static final String SCIM_FEED_ADD = SCIM + "feed:add";
+
+    /**
+     * SCIM Events (RFC 9967, section 2.3.2): the resource was removed from the event
+     * feed.
+     */
+    public static final String SCIM_FEED_REMOVE = SCIM + "feed:remove";
+
+    /**
+     * SCIM Events (RFC 9967, section 2.4.1): a resource was created, the payload lists
+     * the {@code attributes} set.
+     */
+    public static final String SCIM_PROV_CREATE_NOTICE = SCIM + "prov:create:notice";
+
+    /**
+     * SCIM Events (RFC 9967, section 2.4.1): a resource was created, the payload carries
+     * its representation as {@code data}.
+     */
+    public static final String SCIM_PROV_CREATE_FULL = SCIM + "prov:create:full";
+
+    /**
+     * SCIM Events (RFC 9967, section 2.4.2): a resource was modified with SCIM PATCH, the
+     * payload lists the {@code attributes} modified.
+     */
+    public static final String SCIM_PROV_PATCH_NOTICE = SCIM + "prov:patch:notice";
+
+    /**
+     * SCIM Events (RFC 9967, section 2.4.2): a resource was modified with SCIM PATCH, the
+     * payload carries the patch operations as {@code data}.
+     */
+    public static final String SCIM_PROV_PATCH_FULL = SCIM + "prov:patch:full";
+
+    /**
+     * SCIM Events (RFC 9967, section 2.4.3): a resource was replaced with SCIM PUT, the
+     * payload lists the {@code attributes} modified.
+     */
+    public static final String SCIM_PROV_PUT_NOTICE = SCIM + "prov:put:notice";
+
+    /**
+     * SCIM Events (RFC 9967, section 2.4.3): a resource was replaced with SCIM PUT, the
+     * payload carries the new representation as {@code data}.
+     */
+    public static final String SCIM_PROV_PUT_FULL = SCIM + "prov:put:full";
+
+    /**
+     * SCIM Events (RFC 9967, section 2.4.4): the resource was deleted.
+     */
+    public static final String SCIM_PROV_DELETE = SCIM + "prov:delete";
+
+    /**
+     * SCIM Events (RFC 9967, section 2.4.5): the resource was activated.
+     */
+    public static final String SCIM_PROV_ACTIVATE = SCIM + "prov:activate";
+
+    /**
+     * SCIM Events (RFC 9967, section 2.4.6): the resource was deactivated, typically its
+     * user may no longer have an active session.
+     */
+    public static final String SCIM_PROV_DEACTIVATE = SCIM + "prov:deactivate";
+
+    /**
+     * SCIM Events (RFC 9967, section 2.5.1.3): an asynchronous SCIM request completed.
+     */
+    public static final String SCIM_MISC_ASYNC_RESPONSE = SCIM + "misc:asyncresp";
+
     private static final Map<String, String> URI_BY_ALIAS = new ConcurrentHashMap<>();
 
     private static final Map<String, String> ALIAS_BY_URI = new ConcurrentHashMap<>();
@@ -92,6 +162,18 @@ public final class SsfEventTypes {
         register("RiscOptOutEffective", RISC_OPT_OUT_EFFECTIVE);
         register("RiscRecoveryActivated", RISC_RECOVERY_ACTIVATED);
         register("RiscRecoveryInformationChanged", RISC_RECOVERY_INFORMATION_CHANGED);
+        register("ScimFeedAdd", SCIM_FEED_ADD);
+        register("ScimFeedRemove", SCIM_FEED_REMOVE);
+        register("ScimProvCreateNotice", SCIM_PROV_CREATE_NOTICE);
+        register("ScimProvCreateFull", SCIM_PROV_CREATE_FULL);
+        register("ScimProvPatchNotice", SCIM_PROV_PATCH_NOTICE);
+        register("ScimProvPatchFull", SCIM_PROV_PATCH_FULL);
+        register("ScimProvPutNotice", SCIM_PROV_PUT_NOTICE);
+        register("ScimProvPutFull", SCIM_PROV_PUT_FULL);
+        register("ScimProvDelete", SCIM_PROV_DELETE);
+        register("ScimProvActivate", SCIM_PROV_ACTIVATE);
+        register("ScimProvDeactivate", SCIM_PROV_DEACTIVATE);
+        register("ScimMiscAsyncResponse", SCIM_MISC_ASYNC_RESPONSE);
     }
 
     private SsfEventTypes() {
