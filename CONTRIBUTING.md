@@ -1,7 +1,9 @@
 # Contributing to easyssf
 
 Thanks for your interest. The [README](README.md#build) describes how to build the project and
-format the sources; this file describes what happens around a change.
+format the sources; this file describes what happens around a change. [`AGENTS.md`](AGENTS.md)
+summarises the layout and conventions of the code for coding agents (and is a fine start for
+humans too); the modules with rules of their own have one as well.
 
 ## Pull requests
 
