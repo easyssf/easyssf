@@ -6,6 +6,13 @@ The notable changes of every release. The section of a version is the text of it
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-04
+
+SCIM Events (RFC 9967) for the receiver: the event types, the `scim` subject, a typed payload and a
+handler that dispatches by operation, with a provisioning example. Pull requests now build on CI,
+and the README presents plain Java, Spring Boot and Quarkus side by side, with a README of its own
+for the Spring Boot starter.
+
 ### Added
 
 - SCIM Events (RFC 9967): the event types under `urn:ietf:params:scim:event:` with aliases
@@ -56,5 +63,6 @@ Java library and as a Spring Boot 4.1 starter.
 - The framework-free modules are Java modules; every artifact is signed, carries a CycloneDX
   SBOM and a self-contained POM.
 
-[Unreleased]: https://github.com/easyssf/easyssf/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/easyssf/easyssf/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/easyssf/easyssf/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/easyssf/easyssf/releases/tag/v0.1.0
