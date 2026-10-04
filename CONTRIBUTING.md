@@ -46,6 +46,16 @@ to submit the change under the project's license. The CI checks it for every com
 - **`.mvn/jvm.config`** silences the schema validator inside the CycloneDX plugin, which warns about
   keywords of the CycloneDX schema it does not know (`meta:enum`, `deprecated`) on every build. The file
   takes JVM arguments only, so this is where its one line is explained.
+- **Maven 3.9.x**: the wrapper (`.mvn/wrapper/maven-wrapper.properties`) stays on Maven 3.9 for now.
+  Maven 3.10 uses Resolver 2, which writes `_remote.repositories` marker files (and their checksums)
+  into the staging directory the `central-publishing-maven-plugin` bundles, and Central rejects the
+  bundle with "Bundle has content that does NOT have a .pom file"; the first attempt to release 0.2.0
+  failed that way. Dependabot ignores minor and major Maven updates for that reason. Try 3.10 again
+  once the plugin (0.11.0 as of 2026-10-04) excludes those files: build the bundle locally with
+  `./mvnw -Prelease -Dgpg.skip -DskipTests deploy` against dummy credentials and check
+  `target/central-publishing/central-bundle.zip` for `_remote.repositories`. The settings step of the
+  workflows that scopes the Central credentials (`repositoryOrigins`, needed by 3.10) stays: Maven 3.9
+  only warns about the unknown tag.
 - **Database tests**: the JDBC stores are tested on H2 by the normal build and on PostgreSQL in a
   Testcontainers container by the tests tagged `database`, which the normal build excludes:
   `./mvnw -pl easyssf-receiver-jdbc -Pdatabase-tests verify` runs them (Docker required). CI runs
