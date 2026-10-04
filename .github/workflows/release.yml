@@ -32,6 +32,14 @@ jobs:
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
+      - name: Scope the Central credentials to central.sonatype.com
+        # Maven 3.10 offers the credentials of a settings server only to repositories declared with
+        # that id, and 'central' is also the id of Maven Central: without this origin the Central
+        # snapshot repository and publisher API get no credentials (401), see CONTRIBUTING.md.
+        run: |
+          sed -i 's|<id>central</id>|<id>central</id><repositoryOrigins><repositoryOrigin>https://central.sonatype.com</repositoryOrigin></repositoryOrigins>|' ~/.m2/settings.xml
+          grep -c '<repositoryOrigin>https://central.sonatype.com</repositoryOrigin>' ~/.m2/settings.xml
+
       - name: Check that the tag matches the project version
         run: |
           version=$(./mvnw -q -N --no-transfer-progress org.apache.maven.plugins:maven-help-plugin:3.5.1:evaluate -Dexpression=project.version -DforceStdout)
