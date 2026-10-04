@@ -22,4 +22,6 @@ exclude = [
   "^mailto:",
   # requires a logged-in GitHub user
   "^https://github\\.com/easyssf/easyssf/security/advisories/new$",
+  # the compare links of CHANGELOG.md name the tag of a release before it is pushed
+  "^https://github\\.com/easyssf/easyssf/compare/",
 ]
