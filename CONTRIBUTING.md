@@ -123,6 +123,14 @@ Snapshots of `main` are published by `ci.yml` to the
 repository variable `PUBLISH_SNAPSHOTS` is `true`. Consumers add that repository with
 `<snapshots><enabled>true</enabled></snapshots>`.
 
+Both workflows let `setup-java` write the `settings.xml` with the Central token as the server
+`central`, and then add `<repositoryOrigins>https://central.sonatype.com</repositoryOrigins>` to that
+server. Maven 3.10 offers the credentials of a settings server only to repositories whose origin it
+can associate with the server id, and `central` is also the id of Maven Central, so without the
+origin the uploads to `central.sonatype.com` get no credentials and fail with `401`. (The alternative,
+`-Dmaven.repository.credentialScope=id`, restores the id-only matching of Maven 3.9 for every
+server.)
+
 To try the release build locally without signing or uploading:
 `./mvnw -Prelease -Dgpg.skip verify`. With the key in the local keyring, set `MAVEN_GPG_PASSPHRASE`
 to sign as well; the passphrase never goes on the command line.
