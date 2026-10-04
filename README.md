@@ -3,8 +3,8 @@
 Building blocks for the
 [OpenID Shared Signals Framework (SSF)](https://openid.net/specs/openid-sharedsignals-framework-1_0.html)
 in Java: a framework independent **receiver** library and a **Spring Boot starter** that turns a
-Spring Boot application into an SSF receiver. Inspired by the Quarkus extension
-[quarkus-openid-ssf](https://github.com/quarkiverse/quarkus-openid-ssf).
+Spring Boot application into an SSF receiver. Inspired by, and now the foundation of, the Quarkus
+extension [quarkus-openid-ssf](https://github.com/quarkiverse/quarkus-openid-ssf).
 
 **Turn an ordinary Java or Spring application into an SSF receiver without implementing SET
 validation, metadata discovery, PUSH and POLL delivery, stream management and replay protection
