@@ -1,0 +1,11 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="ExampleScimProvisioningApplication" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+    <option name="ACTIVE_PROFILES" value="" />
+    <module name="example-scim-provisioning" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="org.easyssf.examples.scim.ExampleScimProvisioningApplication" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/easyssf-receiver-spring-boot-examples/example-scim-provisioning" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

@@ -151,9 +151,8 @@ jobs:
           path: ~/.m2/repository/org/easyssf/
 
       - name: Build and test the Spring Boot modules
-        run: >-
-          ./mvnw verify
-          -pl easyssf-receiver-spring-boot-autoconfigure,easyssf-receiver-spring-boot-starter,easyssf-receiver-spring-boot-examples,easyssf-receiver-spring-boot-examples/example-oidc-client,easyssf-receiver-spring-boot-examples/example-resource-server,easyssf-receiver-spring-boot-conformance-tests
+        # -amd adds the modules that depend on these two: the starter and every example
+        run: ./mvnw verify -pl easyssf-receiver-spring-boot-autoconfigure,easyssf-receiver-spring-boot-conformance-tests -amd
 
       - name: Upload test reports
         if: always()
