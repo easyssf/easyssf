@@ -27,7 +27,7 @@ Maven multi-module build, Java 21, group id `org.easyssf`. Modules, in dependenc
 | `easyssf-test-conformance` | Testcontainers harness that runs the OpenID conformance suite's receiver plans against any receiver | receiver, Testcontainers, JUnit |
 | `easyssf-receiver-spring-boot-autoconfigure` | Properties, auto-configuration, push endpoint, resource server and OIDC client integration | receiver, Spring Boot 4.1, Spring Security 7.1 |
 | `easyssf-receiver-spring-boot-starter` | Only the dependency and a `package-info.java` | autoconfigure |
-| `easyssf-receiver-spring-boot-examples` | Resource server and OIDC client against Keycloak, not published | starter |
+| `easyssf-receiver-spring-boot-examples` | Resource server and OIDC client against Keycloak, SCIM provisioning against a demo transmitter; not published | starter |
 | `easyssf-receiver-spring-boot-conformance-tests` | The Spring Boot receiver under test and the four plan tests, not published | starter, test-conformance |
 
 The Spring Boot modules are the reference integration; the receiver library is what other

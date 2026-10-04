@@ -17,6 +17,9 @@ The notable changes of every release. The section of a version is the text of it
   (`easyssf.receiver.oidc-client.scim-attribute-claims`), by default `externalId` and `id` against
   `sub` and `userName` against `preferred_username`, so `ScimProvDeactivate` and `ScimProvDelete`
   can terminate sessions.
+- `example-scim-provisioning`: a Spring Boot example that mirrors SCIM `Users` into a local directory
+  with `SsfScimEventHandler`, driven by the `TestTransmitter` of `easyssf-test` because Keycloak does
+  not emit SCIM Events.
 
 ## [0.1.0] - 2026-10-03
 

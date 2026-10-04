@@ -15,6 +15,7 @@
     <modules>
         <module>example-resource-server</module>
         <module>example-oidc-client</module>
+        <module>example-scim-provisioning</module>
     </modules>
 
     <properties>

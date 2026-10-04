@@ -46,7 +46,7 @@ PUSH and POLL delivery.
 | `easyssf-receiver-jdbc` | The database-backed stores of the receiver (processed SETs, revocations), independent of any framework: the SQL, the schema and a small `SsfJdbcOperations` interface, implemented over a `DataSource` or by a framework's template. | `easyssf-receiver` |
 | `easyssf-receiver-spring-boot-starter` | The receiver for Spring Boot 4.1 (Spring Security 7.1, servlet stack): configuration properties, auto-configuration, push endpoint, resource server and OIDC client integration. | `easyssf-receiver`, Spring Boot |
 | `easyssf-test` | Test support: a transmitter that signs and delivers SETs, for the tests of your receiver, see [Testing your receiver](#testing-your-receiver). | `easyssf-core`, Nimbus JOSE + JWT |
-| [`easyssf-receiver-spring-boot-examples`](easyssf-receiver-spring-boot-examples) | Example resource server and OIDC client with a Keycloak setup. | |
+| [`easyssf-receiver-spring-boot-examples`](easyssf-receiver-spring-boot-examples) | Example resource server and OIDC client with a Keycloak setup, and a SCIM provisioning example. | |
 | `easyssf-test-conformance` | Runs the OpenID conformance suite's SSF receiver test plans against a receiver under test, in any framework: the suite started with Testcontainers, the scenarios the receiver plays, and the plan tests a framework's test class extends. | `easyssf-receiver`, Testcontainers, JUnit |
 | [`easyssf-receiver-spring-boot-conformance-tests`](easyssf-receiver-spring-boot-conformance-tests) | The Spring Boot receiver under test and the four plan tests for it. | |
 
@@ -283,6 +283,9 @@ Without Spring Boot, pass the pairs to `SsfSubjectClaimsMatcher.matches(subject,
 
 The receiver does not call the SCIM service provider itself: fetching a resource after a notice event,
 the asynchronous SCIM requests of RFC 9967 and the `Set-Txn` header are the business of a SCIM client.
+The [SCIM provisioning example](easyssf-receiver-spring-boot-examples/README.md#5-scim-provisioning) mirrors
+users into a local directory this way, with a demo transmitter because Keycloak does not emit SCIM
+Events.
 
 ## Push endpoint
 
