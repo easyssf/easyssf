@@ -9,6 +9,12 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    ignore:
+      # nimbus-jose-jwt is pinned to the version Spring Security of the pinned Spring Boot ships (see
+      # nimbus-jose-jwt.version in the root POM), so that a Spring Boot application resolves one
+      # Nimbus whichever dependency it declares first. A Quarkus application gets the version of its
+      # BOM regardless. The pin moves together with the Spring Boot bump, not on its own.
+      - dependency-name: "com.nimbusds:nimbus-jose-jwt"
     groups:
       spring:
         patterns:
