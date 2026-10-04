@@ -106,9 +106,10 @@ pins a released version. Consequences for a change here:
 
 ## Documentation that changes with the code
 
-- `README.md` is the single user document. Its configuration table lists every Spring Boot
-  property with its default; a new property, alias, subject format or handler is documented there
-  in the same change.
+- `README.md` is the user document of the library and of the integrations as a whole; the Spring
+  Boot specifics live in `easyssf-receiver-spring-boot-starter/README.md`, whose configuration table
+  lists every property with its default. A new property, alias, subject format or handler is
+  documented in the right one of the two in the same change.
 - `CHANGELOG.md` follows Keep a Changelog. Add to the `Unreleased` section in the voice of the
   existing entries; the release workflow publishes that section as the release notes.
 - `CONTRIBUTING.md` for build structure, CI and the release procedure. Do not change versions or

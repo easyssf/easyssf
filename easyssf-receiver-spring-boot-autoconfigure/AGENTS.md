@@ -7,7 +7,7 @@ OIDC client support. The starter module only depends on this one.
   `SsfTransmitterProperties` (per transmitter, repeated under
   `easyssf.receiver.transmitters.<name>.*`). A new property gets a javadoc sentence (it becomes
   the configuration metadata description), a default that matches the receiver's, and a row in
-  the README configuration table.
+  the configuration table of the starter's README (`../easyssf-receiver-spring-boot-starter/README.md`).
 - One auto-configuration class per concern in `autoconfigure`, registered in
   `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`. Every bean
   is `@ConditionalOnMissingBean` so applications can replace it; optional integrations are
