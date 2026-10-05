@@ -16,8 +16,8 @@ exception.
 `main` is protected by a [ruleset](.github/rulesets/main.json) (Settings > Rules): every change
 arrives through a pull request whose `status` check of the CI is green, force pushes and deletion are
 blocked, and the head branch is deleted on merge. No review is required while the project has one
-maintainer. Repository admins may bypass the ruleset, which the release steps below use for the
-version commits; everything else goes through a pull request as well. The JSON file in the
+maintainer. Repository admins may bypass the ruleset; releases used that for their version commits
+until 0.2.0, since 0.3.0 they go through a pull request too, so the bypass is an emergency exit only. The JSON file in the
 repository is the documentation of the ruleset, update it when the rules change (the Rules page can
 import it).
 
@@ -113,20 +113,34 @@ generated on the portal (account menu, "Generate User Token"), and `GPG_PRIVATE_
 `GPG_PASSPHRASE`, the ASCII-armored private key of `oss@easyssf.org` and its
 passphrase. The public key is on `keys.openpgp.org` and `keyserver.ubuntu.com`.
 
-To release version `X.Y.Z` from `main`:
+A release goes through a pull request like every other change to `main`; only the tag is pushed
+directly, and tags are not covered by the ruleset. [`etc/release.sh`](etc/release.sh) runs the steps:
 
-1. Set the version in every POM and in the README and website snippets, and update
-   `project.build.outputTimestamp` in the root POM to the release date:
-   `./mvnw versions:set -DnewVersion=X.Y.Z -DgenerateBackupPoms=false`. Turn the `Unreleased`
-   section of `CHANGELOG.md` into the section of `X.Y.Z` with the date; the workflow publishes
-   that section as the release notes and fails without it.
-2. Commit, tag `vX.Y.Z` and push the tag: `git tag -s vX.Y.Z -m "X.Y.Z" && git push origin vX.Y.Z`.
-   The push to `main` uses the admin bypass of the ruleset.
-   The workflow checks that the tag matches the POM version, runs the tests, signs, publishes, and
-   creates the GitHub release with generated notes and the SBOMs attached. The artifacts are on
-   Central a few minutes after the workflow finishes; search indexes them within hours.
-3. Set the next development version, `./mvnw versions:set -DnewVersion=X.Y+1.0-SNAPSHOT
-   -DgenerateBackupPoms=false`, commit and push.
+1. `etc/release.sh prepare X.Y.Z`, on an up-to-date `main`, creates the branch `release/X.Y.Z` and
+   sets the version in every POM and in the dependency snippets of the READMEs, sets
+   `project.build.outputTimestamp` to now, and turns the `Unreleased` section of `CHANGELOG.md` into
+   the section of `X.Y.Z` with today's date (the workflow publishes that section as the release notes
+   and fails without it). Nothing is committed: review the diff, write the lead paragraph of the
+   section, and check the dependency snippets of other projects the script lists, such as the Quarkus
+   extension's.
+2. `etc/release.sh propose [X.Y+1.0]` commits `Release X.Y.Z`, sets the next development version
+   (the next minor by default) and commits `Start X.Y+1.0`, pushes the branch and opens the pull
+   request with the release notes in its description. The release pull request is, like Dependabot's,
+   the exception to the rule that a pull request refers to an issue. **Merge it with a merge commit or
+   a rebase, not a squash**: the commit `Release X.Y.Z` has to reach `main` as it is, because the tag
+   goes on it.
+3. `etc/release.sh release`, on `main` after the merge, finds the commit `Release X.Y.Z`, checks its
+   POM version and changelog section, creates the signed tag `vX.Y.Z` on it and pushes the tag, then
+   watches the release workflow, which checks that the tag matches the POM version, runs the tests,
+   signs, publishes, and creates the GitHub release with the changelog section and the SBOMs
+   attached. The artifacts are on Central a few minutes after the workflow finishes; search indexes
+   them within hours. If the pull request was squashed, the script says so: `main` then has no commit
+   with the release version, and the two commits have to be brought back with a new pull request.
+
+The script refuses to run on the wrong branch, on a `main` that differs from `origin/main`, on a dirty
+tree, or for a tag that exists. Between the merge and the next snapshot commit, `main` carries the
+release version for one commit, which the snapshot publishing job recognizes and skips. The admin
+bypass of the ruleset is not needed for releases.
 
 Snapshots of `main` are published by `ci.yml` to the
 [Central snapshot repository](https://central.sonatype.com/repository/maven-snapshots/) while the
