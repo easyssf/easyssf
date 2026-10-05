@@ -258,6 +258,23 @@ class SsfPollerTests {
     }
 
     @Test
+    void pendingAcknowledgementsAreAGauge() {
+        this.poller.setTransmitter(transmitter.issuer());
+        this.poller.setInitialDelay(Duration.ofHours(1));
+        this.poller.start();
+        this.poller.stop();
+        assertThat(this.meterRegistry.get("easyssf.receiver.poll.pending-acks")
+            .tag("transmitter", transmitter.issuer())
+            .gauge()
+            .value()).isZero();
+        String jti = queue("session-1");
+        this.afterHandling = () -> transmitter.setAvailable(false);
+        assertThatIllegalStateException().isThrownBy(this.poller::pollNow);
+        assertThat(this.handled).containsExactly(jti);
+        assertThat(this.meterRegistry.get("easyssf.receiver.poll.pending-acks").gauge().value()).isEqualTo(1);
+    }
+
+    @Test
     void stopFlushesThePendingAcknowledgements() {
         this.poller.setInitialDelay(Duration.ofHours(1));
         String jti = queue("session-1");

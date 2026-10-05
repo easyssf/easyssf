@@ -3,12 +3,14 @@ package org.easyssf.receiver.metrics;
 import java.time.Duration;
 import java.util.Locale;
 import java.util.function.Function;
+import java.util.function.IntSupplier;
 
 import org.easyssf.core.SsfDeliveryMethod;
 import org.easyssf.core.event.SsfEventTypes;
 import org.easyssf.core.support.SsfAssert;
 
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 
@@ -71,6 +73,15 @@ public class MicrometerSsfReceiverMetrics implements SsfReceiverMetrics {
     @Override
     public void pollCompleted(Duration duration, boolean success) {
         pollCompleted(null, duration, success);
+    }
+
+    @Override
+    public void pollerStarted(String transmitter, IntSupplier pendingAcks) {
+        Gauge.builder("easyssf.receiver.poll.pending-acks", pendingAcks, IntSupplier::getAsInt)
+            .description(
+                    "Acknowledgements and error reports a poller owes its transmitter, waiting for the next poll request")
+            .tag("transmitter", transmitter(transmitter))
+            .register(this.meterRegistry);
     }
 
     @Override

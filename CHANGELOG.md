@@ -13,7 +13,8 @@ The notable changes of every release. The section of a version is the text of it
   `JdbcSsfPollAckStore` (table `EASYSSF_POLL_ACK`, auto-configured with the other JDBC stores,
   `easyssf.receiver.jdbc.ack-retention`), so that a SET handled right before a restart is
   acknowledged afterwards instead of being delivered again. `SsfPoller.stop()` sends the pending
-  acknowledgements with a last request; the health details show them as `pendingAcks`.
+  acknowledgements with a last request; the health details show them as `pendingAcks` and the
+  gauge `easyssf.receiver.poll.pending-acks` counts them.
 - Long polling (RFC 8936, section 2.5): `SsfPoller.setLongPolling(hold)` keeps one request
   outstanding that the transmitter holds until SETs are available; `easyssf.receiver.poll.long-polling`
   and `poll.long-polling-hold` in the Spring Boot starter, off by default. `SsfHttpRequest` carries an
