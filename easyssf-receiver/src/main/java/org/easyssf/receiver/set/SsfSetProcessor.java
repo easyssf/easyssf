@@ -13,6 +13,7 @@ import org.easyssf.core.support.SsfAssert;
 import org.easyssf.receiver.event.SsfEventContext;
 import org.easyssf.receiver.event.SsfEventHandler;
 import org.easyssf.receiver.event.SsfEventHandlingException;
+import org.easyssf.receiver.event.SsfSetInProgressException;
 import org.easyssf.receiver.metrics.SsfReceiverMetrics;
 import org.easyssf.receiver.metrics.SsfReceiverMetrics.SetOutcome;
 import org.easyssf.receiver.stream.SsfStreamVerification;
@@ -158,10 +159,23 @@ public class SsfSetProcessor {
             throw ex;
         }
         issuer = eventToken.iss();
-        if (this.dedupStore != null && this.dedupStore.seenBefore(eventToken)) {
-            logger.debug("Skipping SET " + eventToken.jti() + ", it was processed before");
-            this.metrics.setReceived(issuer, deliveryMethod, SetOutcome.DUPLICATE);
-            return Outcome.DUPLICATE;
+        if (this.dedupStore != null) {
+            switch (this.dedupStore.claim(eventToken)) {
+                case PROCESSED -> {
+                    logger.debug("Skipping SET " + eventToken.jti() + ", it was processed before");
+                    this.metrics.setReceived(issuer, deliveryMethod, SetOutcome.DUPLICATE);
+                    return Outcome.DUPLICATE;
+                }
+                case IN_PROGRESS -> {
+                    logger.debug(
+                            "Leaving SET " + eventToken.jti() + " for a redelivery, another instance is handling it");
+                    this.metrics.setReceived(issuer, deliveryMethod, SetOutcome.IN_PROGRESS);
+                    throw new SsfSetInProgressException(
+                            "SET " + eventToken.jti() + " is being handled by another instance");
+                }
+                case NEW -> {
+                }
+            }
         }
         if (logger.isDebugEnabled()) {
             logger.debug("Received SET " + eventToken.jti() + " (" + deliveryMethod + ") with events "
@@ -190,6 +204,9 @@ public class SsfSetProcessor {
             }
             this.metrics.setReceived(issuer, deliveryMethod, SetOutcome.FAILED);
             throw new SsfEventHandlingException("Could not handle SET " + eventToken.jti(), failure);
+        }
+        if (this.dedupStore != null) {
+            this.dedupStore.processed(eventToken);
         }
         this.metrics.setReceived(issuer, deliveryMethod, SetOutcome.HANDLED);
         String transmitter = issuer;

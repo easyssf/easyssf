@@ -13,6 +13,7 @@ import java.util.Map;
 
 import org.easyssf.core.event.SsfEventToken;
 import org.easyssf.receiver.poll.SsfPendingAck;
+import org.easyssf.receiver.set.SsfJtiDedupStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -129,6 +130,64 @@ abstract class AbstractJdbcSsfStoresTests {
     }
 
     @Test
+    void claimTellsWhetherAnotherInstanceIsOnTheSet() {
+        JdbcSsfJtiDedupStore a = dedupStore();
+        JdbcSsfJtiDedupStore b = dedupStore();
+        assertThat(a.claim(set("jti-1"))).isEqualTo(SsfJtiDedupStore.Claim.NEW);
+        // handled right now by a: b leaves it alone
+        assertThat(b.claim(set("jti-1"))).isEqualTo(SsfJtiDedupStore.Claim.IN_PROGRESS);
+        assertThat(a.claim(set("jti-1"))).isEqualTo(SsfJtiDedupStore.Claim.IN_PROGRESS);
+        a.processed(set("jti-1"));
+        assertThat(b.claim(set("jti-1"))).isEqualTo(SsfJtiDedupStore.Claim.PROCESSED);
+        // a failed handler forgets the claim, the redelivery is handled
+        assertThat(a.claim(set("jti-2"))).isEqualTo(SsfJtiDedupStore.Claim.NEW);
+        a.forget(set("jti-2"));
+        assertThat(b.claim(set("jti-2"))).isEqualTo(SsfJtiDedupStore.Claim.NEW);
+        assertThat(this.jdbc.query("SELECT STATE FROM EASYSSF_PROCESSED_SET WHERE JTI = ?", (row) -> row.getString(1),
+                "jti-1"))
+            .containsExactly("PROCESSED");
+    }
+
+    @Test
+    void abandonedClaimIsTakenOverAfterTheLease() {
+        JdbcSsfJtiDedupStore crashed = dedupStore();
+        JdbcSsfJtiDedupStore survivor = dedupStore();
+        crashed.setLease(Duration.ofSeconds(30));
+        survivor.setLease(Duration.ofSeconds(30));
+        assertThat(crashed.claim(set("jti-1"))).isEqualTo(SsfJtiDedupStore.Claim.NEW);
+        this.clock.advance(Duration.ofSeconds(29));
+        assertThat(survivor.claim(set("jti-1"))).isEqualTo(SsfJtiDedupStore.Claim.IN_PROGRESS);
+        this.clock.advance(Duration.ofSeconds(1));
+        assertThat(survivor.claim(set("jti-1"))).isEqualTo(SsfJtiDedupStore.Claim.NEW);
+        // the take-over renewed the claim
+        assertThat(crashed.claim(set("jti-1"))).isEqualTo(SsfJtiDedupStore.Claim.IN_PROGRESS);
+        survivor.processed(set("jti-1"));
+        assertThat(crashed.claim(set("jti-1"))).isEqualTo(SsfJtiDedupStore.Claim.PROCESSED);
+    }
+
+    @Test
+    void processedAfterThePurgeRecordsTheSetAgain() {
+        JdbcSsfJtiDedupStore store = dedupStore();
+        store.claim(set("jti-1"));
+        this.jdbc.update("DELETE FROM EASYSSF_PROCESSED_SET");
+        store.processed(set("jti-1"));
+        assertThat(store.claim(set("jti-1"))).isEqualTo(SsfJtiDedupStore.Claim.PROCESSED);
+    }
+
+    @Test
+    void tableWithoutTheStateColumnIsRejectedWithTheMigration() {
+        this.jdbc.execute("DROP TABLE EASYSSF_PROCESSED_SET");
+        this.jdbc
+            .execute("CREATE TABLE EASYSSF_PROCESSED_SET (ISSUER VARCHAR(255) NOT NULL, JTI VARCHAR(255) NOT NULL, "
+                    + "PROCESSED_AT BIGINT NOT NULL, CONSTRAINT EASYSSF_PROCESSED_SET_PK PRIMARY KEY (ISSUER, JTI))");
+        assertThatIllegalStateException().isThrownBy(() -> new JdbcSsfJtiDedupStore(this.jdbc, PREFIX))
+            .withMessageContaining("ALTER TABLE EASYSSF_PROCESSED_SET ADD STATE");
+        this.jdbc.execute("ALTER TABLE EASYSSF_PROCESSED_SET ADD STATE VARCHAR(16) DEFAULT 'PROCESSED' NOT NULL");
+        assertThat(new JdbcSsfJtiDedupStore(this.jdbc, PREFIX).claim(set("jti-1")))
+            .isEqualTo(SsfJtiDedupStore.Claim.NEW);
+    }
+
+    @Test
     void forgottenSetIsNotSeenBefore() {
         JdbcSsfJtiDedupStore store = dedupStore();
         store.seenBefore(set("jti-1"));
@@ -139,11 +198,12 @@ abstract class AbstractJdbcSsfStoresTests {
     @Test
     void processedSetsAreForgottenAfterTheRetentionTime() {
         JdbcSsfJtiDedupStore store = dedupStore();
-        store.seenBefore(set("jti-1"));
+        store.claim(set("jti-1"));
+        store.processed(set("jti-1"));
         this.clock.advance(Duration.ofHours(23));
-        assertThat(store.seenBefore(set("jti-1"))).isTrue();
+        assertThat(store.claim(set("jti-1"))).isEqualTo(SsfJtiDedupStore.Claim.PROCESSED);
         this.clock.advance(Duration.ofHours(2));
-        assertThat(store.seenBefore(set("jti-1"))).isFalse();
+        assertThat(store.claim(set("jti-1"))).isEqualTo(SsfJtiDedupStore.Claim.NEW);
         assertThat(count("EASYSSF_PROCESSED_SET")).isEqualTo(1);
     }
 

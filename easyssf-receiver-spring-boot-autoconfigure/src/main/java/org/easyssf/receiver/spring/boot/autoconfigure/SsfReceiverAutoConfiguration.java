@@ -181,7 +181,9 @@ public final class SsfReceiverAutoConfiguration {
     @ConditionalOnMissingBean(SsfJtiDedupStore.class)
     @ConditionalOnBooleanProperty(name = "easyssf.receiver.dedup.enabled", matchIfMissing = true)
     InMemorySsfJtiDedupStore ssfJtiDedupStore(SsfReceiverProperties properties) {
-        return new InMemorySsfJtiDedupStore(properties.getDedup().getCapacity());
+        InMemorySsfJtiDedupStore store = new InMemorySsfJtiDedupStore(properties.getDedup().getCapacity());
+        store.setLease(properties.getDedup().getLease());
+        return store;
     }
 
     /**

@@ -14,6 +14,7 @@ import java.util.function.Supplier;
 import org.easyssf.core.SsfDeliveryMethod;
 import org.easyssf.core.support.SsfAssert;
 import org.easyssf.receiver.event.SsfEventHandlingException;
+import org.easyssf.receiver.event.SsfSetInProgressException;
 import org.easyssf.receiver.http.SsfHttpClient;
 import org.easyssf.receiver.http.SsfHttpRequest;
 import org.easyssf.receiver.http.SsfHttpResponse;
@@ -465,6 +466,10 @@ public class SsfPoller {
         catch (SsfSetVerificationException ex) {
             logger.warn("Rejecting polled SET " + jti + ": " + ex.getMessage());
             this.ackStore.record(key, SsfPendingAck.error(jti, ex.getErrorCode(), ex.getMessage()));
+        }
+        catch (SsfSetInProgressException ex) {
+            // another instance is on it, the transmitter delivers the SET again
+            logger.debug("Not acknowledging polled SET " + jti + ": " + ex.getMessage());
         }
         catch (SsfTransmitterUnavailableException | SsfEventHandlingException ex) {
             // not acknowledged, the transmitter delivers the SET again

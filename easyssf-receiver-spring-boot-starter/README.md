@@ -311,7 +311,7 @@ the state is kept in its database instead, without further configuration:
 
 | Table | Store | Content |
 |---|---|---|
-| `EASYSSF_PROCESSED_SET` | `JdbcSsfJtiDedupStore` | the SETs that were processed, forgotten after `easyssf.receiver.dedup.retention` (7 days) |
+| `EASYSSF_PROCESSED_SET` | `JdbcSsfJtiDedupStore` | the SETs that were processed or are being processed (`STATE`), forgotten after `easyssf.receiver.dedup.retention` (7 days) |
 | `EASYSSF_REVOCATION` | `JdbcSsfTokenRevocationStore` | revoked sessions and subjects, per issuer, removed after `easyssf.receiver.resource-server.revocation-ttl` |
 | `EASYSSF_POLL_ACK` | `JdbcSsfPollAckStore` | acknowledgements and error reports a polling receiver owes its transmitter until a poll request carried them, forgotten after `easyssf.receiver.jdbc.ack-retention` (7 days) |
 
@@ -323,6 +323,15 @@ the state is kept in its database instead, without further configuration:
   startup and says so, rather than on the first event. The stores use plain SQL (`VARCHAR`,
   `BIGINT`, no vendor syntax; a result limit is applied by the JDBC driver) and are tested on H2,
   PostgreSQL and MySQL.
+- **Several instances**: a SET is claimed before its handlers run and marked processed afterwards. An
+  instance that receives a SET another one is handling leaves it for the transmitter's redelivery,
+  neither handling nor acknowledging it, so a handler failure on the first instance is not masked by
+  an acknowledgement of the second. A claim older than `easyssf.receiver.dedup.lease` (60 seconds)
+  counts as abandoned by a crashed instance and the SET is handled again, which is one more reason for
+  handlers to be idempotent. Set the lease longer than your longest handler.
+- **Upgrading from 0.1.0 or 0.2.0**: the table `EASYSSF_PROCESSED_SET` gained the column `STATE`. The
+  store refuses to start without it and prints the statement:
+  `ALTER TABLE EASYSSF_PROCESSED_SET ADD STATE VARCHAR(16) DEFAULT 'PROCESSED' NOT NULL`.
 - **Opting out**: `easyssf.receiver.jdbc.enabled=false` keeps the state in memory although the
   application has a database. Your own `SsfJtiDedupStore`, `SsfTokenRevocationStore` or
   `SsfPollAckStore` bean takes precedence in any case.
@@ -377,7 +386,7 @@ If the application has a Micrometer `MeterRegistry` (for example with
 
 | Meter | Type | Tags |
 |---|---|---|
-| `easyssf.receiver.sets` | counter | `transmitter` (the name of the transmitter, `default` for the one at `easyssf.receiver.*`), `delivery` (`push`, `poll`), `outcome` (`handled`, `duplicate`, `invalid`, `unauthenticated`, `unavailable`, `failed`) |
+| `easyssf.receiver.sets` | counter | `transmitter` (the name of the transmitter, `default` for the one at `easyssf.receiver.*`), `delivery` (`push`, `poll`), `outcome` (`handled`, `duplicate`, `invalid`, `unauthenticated`, `unavailable`, `failed`, `in_progress`) |
 | `easyssf.receiver.events` | counter | `transmitter`, `delivery`, `event` (for example `CaepSessionRevoked`) |
 | `easyssf.receiver.poll` | timer | `transmitter`, `outcome` (`success`, `failure`) |
 | `easyssf.receiver.poll.pending-acks` | gauge | `transmitter`; acknowledgements and error reports waiting for the next poll request, see [POLL delivery](#poll-delivery) |
@@ -452,6 +461,7 @@ name, with its own status. Switch it off with `management.health.easyssf.enabled
 | `easyssf.receiver.dedup.enabled` | `true` | |
 | `easyssf.receiver.dedup.capacity` | `10000` | Size of the in-memory `jti` store. |
 | `easyssf.receiver.dedup.retention` | `7d` | How long the JDBC store remembers a processed SET. |
+| `easyssf.receiver.dedup.lease` | `60s` | How long a SET counts as being handled by the instance that claimed it; longer than the longest handler. |
 | `easyssf.receiver.jdbc.enabled` | `true` | Keep state in the database if the application has a `JdbcTemplate`. |
 | `easyssf.receiver.jdbc.initialize-schema` | `embedded` | When to create missing tables: `embedded`, `always` or `never`. |
 | `easyssf.receiver.jdbc.table-prefix` | `EASYSSF_` | Prefix of the table names. |

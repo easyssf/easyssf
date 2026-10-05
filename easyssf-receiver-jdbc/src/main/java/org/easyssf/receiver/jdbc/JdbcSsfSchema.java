@@ -62,6 +62,7 @@ public final class JdbcSsfSchema {
                 CREATE TABLE %s (
                     ISSUER VARCHAR(255) NOT NULL,
                     JTI VARCHAR(255) NOT NULL,
+                    STATE VARCHAR(16) NOT NULL,
                     PROCESSED_AT BIGINT NOT NULL,
                     CONSTRAINT %s_PK PRIMARY KEY (ISSUER, JTI)
                 )""".formatted(table, name), "CREATE INDEX %s_IX1 ON %s (PROCESSED_AT)".formatted(name, table));

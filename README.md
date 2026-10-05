@@ -158,7 +158,9 @@ class StepUpHandler implements SsfEventHandler {
 ```
 
 Handlers must be idempotent. If a handler throws, the SET is not acknowledged and the transmitter is
-expected to deliver it again, in which case all handlers run again.
+expected to deliver it again, in which case all handlers run again, possibly on another instance of
+the application: with a shared dedup store, a SET is claimed while its handlers run, another instance
+leaves it alone meanwhile, and a claim a crashed instance left behind is taken over after a lease.
 
 `SsfSubject` is the `sub_id` of the SET: a simple subject identifier (RFC 9493: `iss_sub`, `email`,
 `opaque`, `account`, `phone_number`, `did`, `uri`, `aliases`; RFC 9967: `scim`) or a complex subject whose members

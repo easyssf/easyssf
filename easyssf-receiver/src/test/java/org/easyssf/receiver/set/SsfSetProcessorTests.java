@@ -10,6 +10,7 @@ import org.easyssf.core.event.SsfEventToken;
 import org.easyssf.core.event.SsfEventTypes;
 import org.easyssf.receiver.event.SsfEventHandler;
 import org.easyssf.receiver.event.SsfEventHandlingException;
+import org.easyssf.receiver.event.SsfSetInProgressException;
 import org.easyssf.receiver.set.SsfSetProcessor.Outcome;
 import org.junit.jupiter.api.Test;
 
@@ -19,6 +20,8 @@ import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 class SsfSetProcessorTests {
 
     private final List<String> handled = new ArrayList<>();
+
+    private final List<RuntimeException> failures = new ArrayList<>();
 
     private final SsfSetVerifier verifier = (encodedSet) -> new SsfEventToken(encodedSet, "https://idp.example",
             Instant.now(), List.of(), Map.of(SsfEventTypes.CAEP_SESSION_REVOKED, Map.of()), null, null, Map.of());
@@ -64,6 +67,47 @@ class SsfSetProcessorTests {
         // the SET is delivered again and must not be skipped as a duplicate
         assertThat(processor.process("jti-1")).isEqualTo(Outcome.HANDLED);
         assertThat(this.handled).containsExactly("jti-1", "jti-1");
+    }
+
+    @Test
+    void setBeingHandledElsewhereIsLeftForARedelivery() {
+        SsfJtiDedupStore inProgress = new SsfJtiDedupStore() {
+            @Override
+            public Claim claim(org.easyssf.core.event.SsfEventToken eventToken) {
+                return Claim.IN_PROGRESS;
+            }
+
+            @Override
+            public void processed(org.easyssf.core.event.SsfEventToken eventToken) {
+            }
+
+            @Override
+            public void forget(org.easyssf.core.event.SsfEventToken eventToken) {
+            }
+        };
+        SsfSetProcessor processor = new SsfSetProcessor(this.verifier, inProgress, List.of(this.recordingHandler));
+        assertThatExceptionOfType(SsfSetInProgressException.class).isThrownBy(() -> processor.process("jti-1"))
+            .withMessageContaining("another instance");
+        assertThat(this.handled).isEmpty();
+    }
+
+    @Test
+    void handledSetIsMarkedProcessedAndFailedOneForgotten() {
+        InMemorySsfJtiDedupStore store = new InMemorySsfJtiDedupStore(10);
+        this.failures.add(new IllegalStateException("store is down"));
+        SsfEventHandler failingOnce = (context) -> {
+            if (!this.failures.isEmpty()) {
+                throw this.failures.remove(0);
+            }
+            this.handled.add(context.eventToken().jti());
+        };
+        SsfSetProcessor processor = new SsfSetProcessor(this.verifier, store, List.of(failingOnce));
+        assertThatExceptionOfType(SsfEventHandlingException.class).isThrownBy(() -> processor.process("jti-1"));
+        // forgotten: the redelivery is new, not in progress
+        assertThat(store.claim(this.verifier.verify("jti-1"))).isEqualTo(SsfJtiDedupStore.Claim.NEW);
+        store.forget(this.verifier.verify("jti-1"));
+        assertThat(processor.process("jti-1")).isEqualTo(Outcome.HANDLED);
+        assertThat(store.claim(this.verifier.verify("jti-1"))).isEqualTo(SsfJtiDedupStore.Claim.PROCESSED);
     }
 
     @Test
