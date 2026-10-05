@@ -11,7 +11,9 @@ set -euo pipefail
 is_doc() {
   case "$1" in
     *.md | LICENSE | NOTICE | .gitignore | .gitattributes | .lychee.toml | _typos.toml) return 0 ;;
-    .idea/* | .run/* | scratch/* | .github/dependabot.yml) return 0 ;;
+    .idea/* | .run/* | scratch/* | .github/dependabot.yml | .github/rulesets/*) return 0 ;;
+    # scripts people run by hand; etc/eclipse-formatter.prefs stays code, the build checks the formatting with it
+    etc/*.sh) return 0 ;;
     *) return 1 ;;
   esac
 }
