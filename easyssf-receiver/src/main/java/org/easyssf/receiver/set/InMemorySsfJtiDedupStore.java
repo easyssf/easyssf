@@ -18,7 +18,7 @@ import org.easyssf.core.support.SsfAssert;
  */
 public class InMemorySsfJtiDedupStore implements SsfJtiDedupStore {
 
-    private final Map<String, Entry> entries;
+    private final Map<String, Known> entries;
 
     /** a lock rather than synchronized, which pins virtual threads before JDK 24 */
     private final ReentrantLock lock = new ReentrantLock();
@@ -31,7 +31,7 @@ public class InMemorySsfJtiDedupStore implements SsfJtiDedupStore {
         int maxEntries = Math.max(1, capacity);
         this.entries = new LinkedHashMap<>() {
             @Override
-            protected boolean removeEldestEntry(Map.Entry<String, Entry> eldest) {
+            protected boolean removeEldestEntry(Map.Entry<String, Known> eldest) {
                 return size() > maxEntries;
             }
         };
@@ -58,9 +58,9 @@ public class InMemorySsfJtiDedupStore implements SsfJtiDedupStore {
         Instant now = this.clock.instant();
         this.lock.lock();
         try {
-            Entry entry = this.entries.get(key);
+            Known entry = this.entries.get(key);
             if (entry == null) {
-                this.entries.put(key, new Entry(Claim.IN_PROGRESS, now));
+                this.entries.put(key, new Known(Claim.IN_PROGRESS, now));
                 return Claim.NEW;
             }
             if (entry.state == Claim.PROCESSED) {
@@ -68,7 +68,7 @@ public class InMemorySsfJtiDedupStore implements SsfJtiDedupStore {
             }
             if (!entry.since.plus(this.lease).isAfter(now)) {
                 // abandoned: taken over
-                this.entries.put(key, new Entry(Claim.IN_PROGRESS, now));
+                this.entries.put(key, new Known(Claim.IN_PROGRESS, now));
                 return Claim.NEW;
             }
             return Claim.IN_PROGRESS;
@@ -82,7 +82,7 @@ public class InMemorySsfJtiDedupStore implements SsfJtiDedupStore {
     public void processed(SsfEventToken eventToken) {
         this.lock.lock();
         try {
-            this.entries.put(SsfJtiDedupStore.key(eventToken), new Entry(Claim.PROCESSED, this.clock.instant()));
+            this.entries.put(SsfJtiDedupStore.key(eventToken), new Known(Claim.PROCESSED, this.clock.instant()));
         }
         finally {
             this.lock.unlock();
@@ -110,7 +110,7 @@ public class InMemorySsfJtiDedupStore implements SsfJtiDedupStore {
         }
     }
 
-    private record Entry(Claim state, Instant since) {
+    private record Known(Claim state, Instant since) {
     }
 
 }
