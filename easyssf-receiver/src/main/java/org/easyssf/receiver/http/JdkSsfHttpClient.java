@@ -64,7 +64,7 @@ public class JdkSsfHttpClient implements SsfHttpClient {
         HttpRequest.BodyPublisher body = (request.body() != null) ? HttpRequest.BodyPublishers.ofString(request.body())
                 : HttpRequest.BodyPublishers.noBody();
         HttpRequest.Builder builder = HttpRequest.newBuilder(request.uri())
-            .timeout(this.readTimeout)
+            .timeout((request.timeout() != null) ? request.timeout() : this.readTimeout)
             .method(request.method(), body);
         request.headers().forEach(builder::header);
         if (this.userAgent != null && request.headers().keySet().stream().noneMatch(USER_AGENT::equalsIgnoreCase)) {

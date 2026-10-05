@@ -4,15 +4,18 @@ import java.net.URI;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+import org.easyssf.core.SsfDeliveryMethod;
 import org.easyssf.core.event.SsfEventTypes;
 import org.easyssf.receiver.http.JdkSsfHttpClient;
 import org.easyssf.receiver.http.SsfHttpClient;
 import org.easyssf.receiver.http.SsfHttpRequest;
 import org.easyssf.receiver.jdbc.JdbcSsfJtiDedupStore;
+import org.easyssf.receiver.jdbc.JdbcSsfPollAckStore;
 import org.easyssf.receiver.jdbc.JdbcSsfStoreCleanup;
 import org.easyssf.receiver.jdbc.JdbcSsfTokenRevocationStore;
 import org.easyssf.receiver.metrics.MicrometerSsfReceiverMetrics;
 import org.easyssf.receiver.metrics.SsfReceiverMetrics;
+import org.easyssf.receiver.poll.SsfPollAckStore;
 import org.easyssf.receiver.poll.SsfPoller;
 import org.easyssf.receiver.revocation.InMemorySsfTokenRevocationStore;
 import org.easyssf.receiver.revocation.SsfTokenRevocationEventHandler;
@@ -23,7 +26,10 @@ import org.easyssf.receiver.set.InMemorySsfJtiDedupStore;
 import org.easyssf.receiver.set.SsfJtiDedupStore;
 import org.easyssf.receiver.set.SsfSetProcessor;
 import org.easyssf.receiver.set.SsfSetVerifier;
+import org.easyssf.receiver.spring.boot.SsfReceiverProperties;
 import org.easyssf.receiver.spring.boot.SsfTransmitterCustomizer;
+import org.easyssf.receiver.spring.boot.SsfTransmitterFactory;
+import org.easyssf.receiver.spring.boot.SsfTransmitterProperties;
 import org.easyssf.receiver.spring.boot.http.RestClientSsfHttpClient;
 import org.easyssf.receiver.spring.boot.resourceserver.SsfRevokedTokenValidator;
 import org.easyssf.receiver.spring.boot.web.SsfPushEndpoint;
@@ -89,6 +95,43 @@ class SsfReceiverAutoConfigurationTests {
         .withConfiguration(
                 AutoConfigurations.of(DispatcherServletAutoConfiguration.class, WebMvcAutoConfiguration.class,
                         SecurityAutoConfiguration.class, ServletWebSecurityAutoConfiguration.class));
+
+    @Test
+    void longPollingIsConfiguredOnThePoller() {
+        this.webContextRunner
+            .withPropertyValues("easyssf.receiver.delivery-method=poll",
+                    "easyssf.receiver.poll.endpoint-url=https://idp.example/realms/test/poll",
+                    "easyssf.receiver.poll.long-polling=true", "easyssf.receiver.poll.long-polling-hold=20s")
+            .run((context) -> {
+                assertThat(context).hasNotFailed().hasSingleBean(SsfPoller.class);
+                assertThat(context.getBean(SsfPoller.class).isLongPolling()).isTrue();
+            });
+        this.webContextRunner
+            .withPropertyValues("easyssf.receiver.delivery-method=poll",
+                    "easyssf.receiver.poll.endpoint-url=https://idp.example/realms/test/poll")
+            .run((context) -> assertThat(context.getBean(SsfPoller.class).isLongPolling()).isFalse());
+    }
+
+    @Test
+    void longPollingGetsAJdkClientUnlessTheApplicationClientIsOne() {
+        SsfTransmitterProperties properties = new SsfTransmitterProperties();
+        properties.setTransmitterIssuer("https://idp.example/realms/test");
+        properties.setDeliveryMethod(SsfDeliveryMethod.POLL);
+        SsfHttpClient restClient = (request) -> null;
+        JdkSsfHttpClient jdkClient = new JdkSsfHttpClient();
+        SsfReceiverProperties.Http http = new SsfReceiverProperties.Http();
+        http.setUserAgent("my-receiver/1.0");
+
+        // short polling: the client of the application, whatever it is
+        assertThat(SsfTransmitterFactory.pollHttpClient("default", properties, restClient, http)).isSameAs(restClient);
+        properties.getPoll().setLongPolling(true);
+        assertThat(SsfTransmitterFactory.pollHttpClient("default", properties, jdkClient, http)).isSameAs(jdkClient);
+        SsfHttpClient pollClient = SsfTransmitterFactory.pollHttpClient("default", properties, restClient, http);
+        assertThat(pollClient).isInstanceOf(JdkSsfHttpClient.class).isNotSameAs(restClient);
+        assertThat(((JdkSsfHttpClient) pollClient).getUserAgent()).isEqualTo("my-receiver/1.0");
+        properties.setDeliveryMethod(SsfDeliveryMethod.PUSH);
+        assertThat(SsfTransmitterFactory.pollHttpClient("default", properties, restClient, http)).isSameAs(restClient);
+    }
 
     @Test
     void namedTransmittersWorkWithoutTheDefaultOne() {
@@ -337,6 +380,7 @@ class SsfReceiverAutoConfigurationTests {
     void stateIsKeptInTheDatabaseWhenApplicationHasJdbcTemplate() {
         this.webContextRunner.withConfiguration(JDBC).run((context) -> {
             assertThat(context).hasSingleBean(SsfJtiDedupStore.class).hasSingleBean(JdbcSsfJtiDedupStore.class);
+            assertThat(context).hasSingleBean(SsfPollAckStore.class).hasSingleBean(JdbcSsfPollAckStore.class);
             assertThat(context).hasSingleBean(SsfTokenRevocationStore.class)
                 .hasSingleBean(JdbcSsfTokenRevocationStore.class);
             // the tables are created in an embedded database

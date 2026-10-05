@@ -291,6 +291,8 @@ SsfPushResponse response = pushHandler.handle(authorizationHeader, requestBody);
 
 // POLL: fetch SETs from the transmitter instead
 SsfPoller poller = new SsfPoller(httpClient, tokenProvider, () -> pollEndpoint, processor);
+poller.setAckStore(ackStore);              // optional: JdbcSsfPollAckStore keeps acknowledgements across restarts
+poller.setLongPolling(Duration.ofSeconds(30)); // optional: hold requests instead of polling every interval
 poller.start();
 ```
 
@@ -372,8 +374,6 @@ streams a receiver registered. The subject helpers are the static methods of `Ss
 ## Not included (yet)
 
 - A transmitter. `easyssf-core` is written to be shared with one.
-- Long polling, and a durable store for acknowledgements that were not sent yet (a SET whose
-  acknowledgement is lost is delivered again and skipped as a duplicate).
 
 ## Build
 

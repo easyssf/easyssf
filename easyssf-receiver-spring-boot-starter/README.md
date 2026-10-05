@@ -190,7 +190,24 @@ easyssf:
   `easyssf.receiver.poll.rate-limit.max-backoff` (5 minutes). A `429` without the header pauses for
   `easyssf.receiver.poll.rate-limit.fallback-backoff`, if set.
 - With `easyssf.receiver.poll.auto-startup=false` nothing is polled until you call `SsfPoller.pollNow()`.
-- Long polling is not used, requests always ask the transmitter to return immediately.
+- **Acknowledgements** ride on the next poll request (RFC 8936, section 2.4) and wait in an
+  `SsfPollAckStore` until a request has carried them. In memory by default; with a `JdbcTemplate` they
+  are kept in the table `EASYSSF_POLL_ACK` (see [Keeping state in the database](#keeping-state-in-the-database)),
+  so that a SET handled right before a restart is acknowledged afterwards instead of being delivered
+  again and skipped as a duplicate. `stop()` sends the pending acknowledgements with a last request.
+  The health details show them as `pendingAcks`.
+- **Long polling**: by default every request asks the transmitter to answer at once
+  (`returnImmediately: true`) and the transmitter is polled every `poll.interval`. With
+  `easyssf.receiver.poll.long-polling=true` the poller keeps one request outstanding instead: the
+  transmitter holds it until SETs are available or its hold time elapses (section 2.5), and the next
+  request goes out as soon as the response was handled. Set `poll.long-polling-hold` to the hold time
+  agreed with the transmitter (30 seconds by default); the request waits that long plus a margin. A
+  transmitter that answers an empty long poll at once is polled every `poll.interval` nevertheless.
+  Whether Keycloak holds poll requests has not been verified; its default remains short polling.
+  With long polling on, the poller calls the transmitter with the JDK HTTP client even if the
+  application has a `RestClient`, because the `RestClient` has no timeout per request
+  (`SsfTransmitterFactory.pollHttpClient`); a poller bean of your own, built with
+  `SsfTransmitterFactory.poller(...)`, uses whatever client you pass.
 
 ## Stream management
 
@@ -296,6 +313,7 @@ the state is kept in its database instead, without further configuration:
 |---|---|---|
 | `EASYSSF_PROCESSED_SET` | `JdbcSsfJtiDedupStore` | the SETs that were processed, forgotten after `easyssf.receiver.dedup.retention` (7 days) |
 | `EASYSSF_REVOCATION` | `JdbcSsfTokenRevocationStore` | revoked sessions and subjects, per issuer, removed after `easyssf.receiver.resource-server.revocation-ttl` |
+| `EASYSSF_POLL_ACK` | `JdbcSsfPollAckStore` | acknowledgements and error reports a polling receiver owes its transmitter until a poll request carried them, forgotten after `easyssf.receiver.jdbc.ack-retention` (7 days) |
 
 - **Tables**: in an embedded database (H2, HSQLDB, Derby) the tables are created on startup. For any
   other database create them with your migration tool, the statements are in
@@ -303,21 +321,22 @@ the state is kept in its database instead, without further configuration:
   (`classpath:org/easyssf/receiver/jdbc/schema.sql`), or set
   `easyssf.receiver.jdbc.initialize-schema=always`. If a table is missing the application fails on
   startup and says so, rather than on the first event. The stores use plain SQL (`VARCHAR`,
-  `BIGINT`, no vendor syntax) and are tested on H2 and PostgreSQL.
+  `BIGINT`, no vendor syntax; a result limit is applied by the JDBC driver) and are tested on H2,
+  PostgreSQL and MySQL.
 - **Opting out**: `easyssf.receiver.jdbc.enabled=false` keeps the state in memory although the
-  application has a database. Your own `SsfJtiDedupStore` or `SsfTokenRevocationStore` bean takes
-  precedence in any case.
+  application has a database. Your own `SsfJtiDedupStore`, `SsfTokenRevocationStore` or
+  `SsfPollAckStore` bean takes precedence in any case.
 - **Cleanup**: expired rows are deleted when a store is written to (the SET table at most once a
   minute) and every `easyssf.receiver.jdbc.cleanup-interval` (15 minutes) by `JdbcSsfStoreCleanup`
   on a thread of its own; `easyssf.receiver.jdbc.cleanup-interval=0` turns the periodic cleanup off.
-  Both stores offer `purgeExpired()` to do it from your own scheduler.
+  The stores offer `purgeExpired()` to do it from your own scheduler.
 - **Cost**: a resource server checks every access token with one query on the primary key of
   `EASYSSF_REVOCATION`.
 - The stores live in `easyssf-receiver-jdbc` and have no Spring dependency: `SsfJdbcOperations` runs
   their SQL, over a `DataSource` (`DataSourceSsfJdbcOperations`) or, in Spring Boot, the `JdbcTemplate`
   of the application, so its transactions and exception translation apply.
 - The stores use plain SQL (timestamps are stored as milliseconds since the epoch) and were tested
-  with H2 and PostgreSQL. The revocation table is only used by resource servers. Sessions of an
+  with H2, PostgreSQL and MySQL. The revocation table is only used by resource servers. Sessions of an
   OIDC client are not affected, see `SsfSessionTerminator`.
 
 ## Calling the transmitter
@@ -414,6 +433,8 @@ name, with its own status. Switch it off with `management.health.easyssf.enabled
 | `easyssf.receiver.poll.interval` | `30s` | |
 | `easyssf.receiver.poll.initial-delay` | `1s` | |
 | `easyssf.receiver.poll.max-events` | `100` | SETs per request. |
+| `easyssf.receiver.poll.long-polling` | `false` | Keep one request outstanding that the transmitter holds until SETs are available, instead of polling every `interval`. |
+| `easyssf.receiver.poll.long-polling-hold` | `30s` | How long the transmitter holds a long poll request, agreed with it; the request waits that long plus a margin. |
 | `easyssf.receiver.poll.rate-limit.fallback-backoff` | | Pause after a `429` without `Retry-After`; unset, the next poll comes at the regular interval. |
 | `easyssf.receiver.poll.rate-limit.max-backoff` | `5m` | Longest pause a `Retry-After` header or the fallback can cause. |
 | `easyssf.receiver.metrics.enabled` | `true` | |
@@ -434,6 +455,8 @@ name, with its own status. Switch it off with `management.health.easyssf.enabled
 | `easyssf.receiver.jdbc.initialize-schema` | `embedded` | When to create missing tables: `embedded`, `always` or `never`. |
 | `easyssf.receiver.jdbc.table-prefix` | `EASYSSF_` | Prefix of the table names. |
 | `easyssf.receiver.jdbc.cleanup-interval` | `15m` | How often expired rows are purged; `0` turns it off. |
+| `easyssf.receiver.jdbc.ack-retention` | `7d` | How long the JDBC store keeps a poll acknowledgement no request managed to deliver. |
+| `easyssf.receiver.jdbc.ack-delete-batch-size` | `100` | How many delivered acknowledgements one `DELETE` of the JDBC store removes at once. |
 | `easyssf.receiver.resource-server.enabled` | `true` | |
 | `easyssf.receiver.resource-server.event-types` | `CaepSessionRevoked` | Events that revoke access tokens. |
 | `easyssf.receiver.resource-server.revocation-ttl` | `1h` | |

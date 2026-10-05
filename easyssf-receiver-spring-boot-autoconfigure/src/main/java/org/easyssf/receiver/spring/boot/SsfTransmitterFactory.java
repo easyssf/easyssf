@@ -1,6 +1,7 @@
 package org.easyssf.receiver.spring.boot;
 
 import java.net.URI;
+import java.time.Duration;
 import java.util.List;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
@@ -9,8 +10,10 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.easyssf.core.SsfDeliveryMethod;
 import org.easyssf.core.stream.SsfStreamConfiguration;
+import org.easyssf.receiver.http.JdkSsfHttpClient;
 import org.easyssf.receiver.http.SsfHttpClient;
 import org.easyssf.receiver.metrics.SsfReceiverMetrics;
+import org.easyssf.receiver.poll.SsfPollAckStore;
 import org.easyssf.receiver.poll.SsfPoller;
 import org.easyssf.receiver.set.NimbusSsfSetVerifier;
 import org.easyssf.receiver.set.SsfSetProcessor;
@@ -180,12 +183,62 @@ public final class SsfTransmitterFactory {
     public static SsfPoller poller(String name, SsfTransmitterProperties properties, SsfHttpClient httpClient,
             SsfTransmitterTokenProvider tokenProvider, SsfSetProcessor processor, SsfReceiverStream receiverStream,
             SsfReceiverMetrics metrics) {
+        return poller(name, properties, httpClient, tokenProvider, processor, receiverStream, metrics, null);
+    }
+
+    /**
+     * The HTTP client the poller of a transmitter calls the transmitter with: the given
+     * client, unless long polling is on and the client is not a {@link JdkSsfHttpClient}.
+     * A long poll waits longer than the read timeout of the application's
+     * {@code RestClient} allows, and the {@code RestClient} has no timeout per request,
+     * so the poller then gets a JDK client of its own, with the connect timeout and user
+     * agent of the {@code http} properties and a read timeout that covers the hold time.
+     * The auto-configuration uses it; an application that builds its own poller bean
+     * passes whatever client it wants to {@link #poller}.
+     * @param httpClient the client of the application
+     * @param http the {@code easyssf.receiver.http.*} properties, {@code null} for their
+     * defaults
+     */
+    public static SsfHttpClient pollHttpClient(String name, SsfTransmitterProperties properties,
+            SsfHttpClient httpClient, SsfReceiverProperties.Http http) {
+        SsfTransmitterProperties.Poll poll = properties.getPoll();
+        if (properties.getDeliveryMethod() != SsfDeliveryMethod.POLL || !poll.isLongPolling()
+                || httpClient instanceof JdkSsfHttpClient) {
+            return httpClient;
+        }
+        Duration connectTimeout = (http != null && http.getConnectTimeout() != null) ? http.getConnectTimeout()
+                : SsfReceiverProperties.Http.DEFAULT_TIMEOUT;
+        JdkSsfHttpClient pollClient = new JdkSsfHttpClient(connectTimeout, poll.getLongPollingHold().plusSeconds(15));
+        if (http != null) {
+            pollClient.setUserAgent(http.getUserAgent());
+        }
+        logger.info(prefix(name) + "poll.long-polling is on, the poller calls the transmitter with the JDK HTTP "
+                + "client rather than the RestClient of the application");
+        return pollClient;
+    }
+
+    /**
+     * @param httpClient the client the poller calls the transmitter with, see
+     * {@link #pollHttpClient} for the one the auto-configuration chooses
+     * @param ackStore keeps the acknowledgements the poller owes the transmitter,
+     * {@code null} for the in-memory default
+     * @return the poller, {@code null} with PUSH delivery
+     */
+    public static SsfPoller poller(String name, SsfTransmitterProperties properties, SsfHttpClient httpClient,
+            SsfTransmitterTokenProvider tokenProvider, SsfSetProcessor processor, SsfReceiverStream receiverStream,
+            SsfReceiverMetrics metrics, SsfPollAckStore ackStore) {
         if (properties.getDeliveryMethod() != SsfDeliveryMethod.POLL) {
             return null;
         }
         SsfTransmitterProperties.Poll poll = properties.getPoll();
         SsfPoller poller = new SsfPoller(httpClient, tokenProvider, pollEndpoint(name, properties, receiverStream),
                 processor);
+        if (ackStore != null) {
+            poller.setAckStore(ackStore);
+        }
+        if (poll.isLongPolling()) {
+            poller.setLongPolling(poll.getLongPollingHold());
+        }
         poller.setTransmitter(properties.getTransmitterIssuer());
         poller.setMetrics((metrics != null) ? metrics : SsfReceiverMetrics.NOOP);
         poller.setInterval(poll.getInterval());
@@ -201,6 +254,30 @@ public final class SsfTransmitterFactory {
      */
     public static SsfTransmitter.Builder builder(String name, SsfTransmitterProperties properties,
             SsfHttpClient httpClient, SsfSetProcessor processor, SsfReceiverMetrics metrics) {
+        return builder(name, properties, httpClient, processor, metrics, null);
+    }
+
+    /**
+     * A builder with every part of the transmitter built from its properties.
+     * @param ackStore keeps the acknowledgements a poller owes the transmitter,
+     * {@code null} for the in-memory default
+     */
+    public static SsfTransmitter.Builder builder(String name, SsfTransmitterProperties properties,
+            SsfHttpClient httpClient, SsfSetProcessor processor, SsfReceiverMetrics metrics, SsfPollAckStore ackStore) {
+        return builder(name, properties, httpClient, processor, metrics, ackStore, null);
+    }
+
+    /**
+     * A builder with every part of the transmitter built from its properties.
+     * @param ackStore keeps the acknowledgements a poller owes the transmitter,
+     * {@code null} for the in-memory default
+     * @param http the {@code easyssf.receiver.http.*} properties, for the
+     * {@link #pollHttpClient poll client} of a long polling transmitter; {@code null} for
+     * their defaults
+     */
+    public static SsfTransmitter.Builder builder(String name, SsfTransmitterProperties properties,
+            SsfHttpClient httpClient, SsfSetProcessor processor, SsfReceiverMetrics metrics, SsfPollAckStore ackStore,
+            SsfReceiverProperties.Http http) {
         SsfReceiverStream receiverStream = new SsfReceiverStream();
         SsfTransmitterMetadataResolver metadataResolver = metadataResolver(name, properties, httpClient);
         SsfTransmitterTokenProvider tokenProvider = tokenProvider(name, properties, httpClient);
@@ -213,8 +290,8 @@ public final class SsfTransmitterFactory {
             .receiverStream(receiverStream)
             .streamVerification(streamVerification(receiverStream))
             .streamRegistrar(streamRegistrar(name, properties, streamClient, receiverStream))
-            .poller(poller(name, properties, httpClient, tokenProvider, processor, receiverStream, metrics),
-                    properties.getPoll().isAutoStartup())
+            .poller(poller(name, properties, pollHttpClient(name, properties, httpClient, http), tokenProvider,
+                    processor, receiverStream, metrics, ackStore), properties.getPoll().isAutoStartup())
             .pushAuthorizationHeader(properties.getPush().getExpectedAuthHeader());
     }
 

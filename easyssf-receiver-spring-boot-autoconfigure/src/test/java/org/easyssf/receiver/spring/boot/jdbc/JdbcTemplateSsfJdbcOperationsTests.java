@@ -42,4 +42,21 @@ class JdbcTemplateSsfJdbcOperationsTests {
         assertThat(store.purgeExpired()).isZero();
     }
 
+    @Test
+    void limitsAQueryThroughTheDriver() {
+        String prefix = JdbcSsfSchema.DEFAULT_TABLE_PREFIX;
+        JdbcSsfSchema.prepareTable(this.jdbc, JdbcSsfSchema.pollAckTable(prefix),
+                JdbcSsfSchema.createPollAckTable(prefix), true, null);
+        for (int i = 0; i < 3; i++) {
+            this.jdbc.update("INSERT INTO EASYSSF_POLL_ACK (ISSUER, JTI, RECORDED_AT) VALUES (?, ?, ?)", "i",
+                    "jti-" + i, (long) i);
+        }
+        assertThat(this.jdbc.query("SELECT JTI FROM EASYSSF_POLL_ACK WHERE ISSUER = ? ORDER BY RECORDED_AT", 2,
+                (row) -> row.getString(1), "i"))
+            .containsExactly("jti-0", "jti-1");
+        assertThat(this.jdbc.query("SELECT JTI FROM EASYSSF_POLL_ACK WHERE ISSUER = ? ORDER BY RECORDED_AT",
+                (row) -> row.getString(1), "i"))
+            .hasSize(3);
+    }
+
 }

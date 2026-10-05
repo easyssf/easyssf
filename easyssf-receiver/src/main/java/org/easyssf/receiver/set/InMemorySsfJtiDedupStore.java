@@ -2,6 +2,7 @@ package org.easyssf.receiver.set;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.easyssf.core.event.SsfEventToken;
 
@@ -12,6 +13,9 @@ import org.easyssf.core.event.SsfEventToken;
 public class InMemorySsfJtiDedupStore implements SsfJtiDedupStore {
 
     private final Map<String, Boolean> seen;
+
+    /** a lock rather than synchronized, which pins virtual threads before JDK 24 */
+    private final ReentrantLock lock = new ReentrantLock();
 
     public InMemorySsfJtiDedupStore(int capacity) {
         int maxEntries = Math.max(1, capacity);
@@ -24,17 +28,35 @@ public class InMemorySsfJtiDedupStore implements SsfJtiDedupStore {
     }
 
     @Override
-    public synchronized boolean seenBefore(SsfEventToken eventToken) {
-        return this.seen.put(SsfJtiDedupStore.key(eventToken), Boolean.TRUE) != null;
+    public boolean seenBefore(SsfEventToken eventToken) {
+        this.lock.lock();
+        try {
+            return this.seen.put(SsfJtiDedupStore.key(eventToken), Boolean.TRUE) != null;
+        }
+        finally {
+            this.lock.unlock();
+        }
     }
 
     @Override
-    public synchronized void forget(SsfEventToken eventToken) {
-        this.seen.remove(SsfJtiDedupStore.key(eventToken));
+    public void forget(SsfEventToken eventToken) {
+        this.lock.lock();
+        try {
+            this.seen.remove(SsfJtiDedupStore.key(eventToken));
+        }
+        finally {
+            this.lock.unlock();
+        }
     }
 
-    public synchronized int size() {
-        return this.seen.size();
+    public int size() {
+        this.lock.lock();
+        try {
+            return this.seen.size();
+        }
+        finally {
+            this.lock.unlock();
+        }
     }
 
 }

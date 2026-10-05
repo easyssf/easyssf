@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.easyssf.core.event.SsfSubject;
+import org.easyssf.receiver.jdbc.JdbcSsfPollAckStore;
 import org.easyssf.receiver.session.SsfSubjectClaimsMatcher;
 import org.easyssf.receiver.transmitter.SsfTransmitter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -261,6 +262,18 @@ public class SsfReceiverProperties extends SsfTransmitterProperties {
          */
         private Duration cleanupInterval = Duration.ofMinutes(15);
 
+        /**
+         * How long the JDBC store keeps an acknowledgement a polling receiver owes its
+         * transmitter if no poll request manages to deliver it.
+         */
+        private Duration ackRetention = Duration.ofDays(7);
+
+        /**
+         * How many acknowledgements one DELETE of the JDBC store removes at once;
+         * databases limit the parameters of a statement.
+         */
+        private int ackDeleteBatchSize = JdbcSsfPollAckStore.DEFAULT_DELETE_BATCH_SIZE;
+
         public boolean isEnabled() {
             return this.enabled;
         }
@@ -291,6 +304,22 @@ public class SsfReceiverProperties extends SsfTransmitterProperties {
 
         public void setCleanupInterval(Duration cleanupInterval) {
             this.cleanupInterval = cleanupInterval;
+        }
+
+        public Duration getAckRetention() {
+            return this.ackRetention;
+        }
+
+        public void setAckRetention(Duration ackRetention) {
+            this.ackRetention = ackRetention;
+        }
+
+        public int getAckDeleteBatchSize() {
+            return this.ackDeleteBatchSize;
+        }
+
+        public void setAckDeleteBatchSize(int ackDeleteBatchSize) {
+            this.ackDeleteBatchSize = ackDeleteBatchSize;
         }
 
         public enum InitializeSchema {

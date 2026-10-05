@@ -30,6 +30,24 @@ public interface SsfJdbcOperations {
     <T> List<T> query(String sql, SsfJdbcRowMapper<T> mapper, Object... args);
 
     /**
+     * Runs a query and returns at most {@code maxRows} rows. The limit is applied with
+     * {@code Statement.setMaxRows}, which every JDBC driver supports, rather than with
+     * the SQL for it, which differs between databases ({@code FETCH FIRST},
+     * {@code LIMIT}, {@code TOP}). This default runs the query without a limit and cuts
+     * the result; implementations should override it.
+     * @param sql the query with {@code ?} placeholders
+     * @param maxRows the most rows to return, positive
+     * @param mapper maps each row of the result
+     * @param args the values of the placeholders
+     * @return the mapped rows
+     * @throws SsfJdbcException if the query fails
+     */
+    default <T> List<T> query(String sql, int maxRows, SsfJdbcRowMapper<T> mapper, Object... args) {
+        List<T> rows = query(sql, mapper, args);
+        return (rows.size() > maxRows) ? List.copyOf(rows.subList(0, maxRows)) : rows;
+    }
+
+    /**
      * Runs a statement that returns nothing, for example DDL.
      * @throws SsfJdbcException if the statement fails
      */

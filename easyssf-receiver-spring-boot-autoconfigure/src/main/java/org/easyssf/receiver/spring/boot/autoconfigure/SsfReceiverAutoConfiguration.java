@@ -12,6 +12,7 @@ import org.easyssf.receiver.event.SsfEventHandler;
 import org.easyssf.receiver.http.JdkSsfHttpClient;
 import org.easyssf.receiver.http.SsfHttpClient;
 import org.easyssf.receiver.metrics.SsfReceiverMetrics;
+import org.easyssf.receiver.poll.SsfPollAckStore;
 import org.easyssf.receiver.poll.SsfPoller;
 import org.easyssf.receiver.set.InMemorySsfJtiDedupStore;
 import org.easyssf.receiver.set.NimbusSsfSetVerifier;
@@ -167,9 +168,11 @@ public final class SsfReceiverAutoConfiguration {
     @ConditionalOnProperty(name = "easyssf.receiver.delivery-method", havingValue = "poll")
     SsfPoller ssfPoller(SsfReceiverProperties properties, SsfHttpClient httpClient,
             SsfTransmitterTokenProvider tokenProvider, SsfSetProcessor processor, SsfReceiverStream receiverStream,
-            ObjectProvider<SsfReceiverMetrics> metrics) {
-        return SsfTransmitterFactory.poller(SsfTransmitter.DEFAULT_NAME, properties, httpClient, tokenProvider,
-                processor, receiverStream, metrics.getIfAvailable());
+            ObjectProvider<SsfReceiverMetrics> metrics, ObjectProvider<SsfPollAckStore> ackStore) {
+        SsfHttpClient pollClient = SsfTransmitterFactory.pollHttpClient(SsfTransmitter.DEFAULT_NAME, properties,
+                httpClient, properties.getHttp());
+        return SsfTransmitterFactory.poller(SsfTransmitter.DEFAULT_NAME, properties, pollClient, tokenProvider,
+                processor, receiverStream, metrics.getIfAvailable(), ackStore.getIfAvailable());
     }
 
     // ---- shared by all transmitters
@@ -213,7 +216,7 @@ public final class SsfReceiverAutoConfiguration {
             ObjectProvider<SsfTransmitterTokenProvider> tokenProvider, ObjectProvider<SsfStreamClient> streamClient,
             ObjectProvider<SsfReceiverStream> receiverStream, ObjectProvider<SsfStreamVerification> streamVerification,
             ObjectProvider<SsfStreamRegistrar> streamRegistrar, ObjectProvider<SsfPoller> poller,
-            ObjectProvider<SsfTransmitterCustomizer> customizers) {
+            ObjectProvider<SsfTransmitterCustomizer> customizers, ObjectProvider<SsfPollAckStore> ackStore) {
         Map<String, SsfTransmitterProperties> configured;
         try {
             configured = properties.getConfiguredTransmitters();
@@ -245,7 +248,7 @@ public final class SsfReceiverAutoConfiguration {
             }
             else {
                 builder = SsfTransmitterFactory.builder(name, transmitterProperties, httpClient, processor,
-                        metrics.getIfAvailable());
+                        metrics.getIfAvailable(), ackStore.getIfAvailable(), properties.getHttp());
             }
             customizers.orderedStream().forEach((customizer) -> customizer.customize(builder));
             transmitters.add(builder.build());

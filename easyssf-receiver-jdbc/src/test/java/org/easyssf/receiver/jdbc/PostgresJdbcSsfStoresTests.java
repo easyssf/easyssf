@@ -19,7 +19,7 @@ class PostgresJdbcSsfStoresTests extends AbstractJdbcSsfStoresTests {
     private static final String IMAGE = "postgres:18.4";
 
     private static final List<String> TABLES = List.of("EASYSSF_PROCESSED_SET", "EASYSSF_REVOCATION",
-            "APP_SSF_PROCESSED_SET", "OTHER_REVOCATION");
+            "APP_SSF_PROCESSED_SET", "OTHER_REVOCATION", "EASYSSF_POLL_ACK");
 
     private static PostgreSQLContainer postgres;
 
