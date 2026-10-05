@@ -10,12 +10,14 @@ module org.easyssf.receiver {
     requires java.net.http;
     requires static micrometer.core;
 
+    exports org.easyssf.receiver.caep;
     exports org.easyssf.receiver.event;
     exports org.easyssf.receiver.http;
     exports org.easyssf.receiver.metrics;
     exports org.easyssf.receiver.poll;
     exports org.easyssf.receiver.push;
     exports org.easyssf.receiver.revocation;
+    exports org.easyssf.receiver.risc;
     exports org.easyssf.receiver.scim;
     exports org.easyssf.receiver.session;
     exports org.easyssf.receiver.set;

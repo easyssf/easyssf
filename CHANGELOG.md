@@ -30,6 +30,15 @@ The notable changes of every release. The section of a version is the text of it
 - `SsfEventToken.idempotencyKey()` and `SsfEventContext.idempotencyKey()`, the issuer and `jti` of a
   SET, as the key for the side effects of a handler: processing is at least once, which the
   documentation now says in those words.
+- Typed CAEP and RISC events: `SsfCaepEventHandler` and `SsfRiscEventHandler` dispatch the events of a
+  SET to a method per event (`onSessionRevoked`, `onAssuranceLevelChange`, `onAccountDisabled`, ...),
+  with `SsfCaepEvent` and `SsfRiscEvent` from `easyssf-core` for the claims the specifications define
+  (`eventTimestamp()`, `initiatingEntity()`, the localized `reasonAdmin()` and `reasonUser()`,
+  `credentialType()`, `currentLevel()`, `changeDirection()`, `reason()`, `newValue()`, ...). An event
+  type in the CAEP or RISC namespace that easyssf does not know yet is `SsfCaepEventKind.OTHER` or
+  `SsfRiscEventKind.OTHER` and reaches `onOtherCaepEvent` or `onOtherRiscEvent`. `SsfEventContext.eventFor`
+  stays for raw access. `SsfEventTypes` gained `RiscSessionsRevoked` (deprecated by RISC, still sent) and
+  `isCaepEvent`/`isRiscEvent`; `SsfEventTimestamps` reads an `event_timestamp` in seconds or milliseconds.
 - Schema migration: `easyssf-receiver-jdbc` ships versioned migration scripts in
   `org/easyssf/receiver/jdbc/migration/` (Flyway naming, plain SQL), and `JdbcSsfSchema.prepareTable`
   adds the columns a release introduced to an existing table where it may create tables
