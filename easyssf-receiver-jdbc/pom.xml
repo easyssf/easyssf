@@ -51,6 +51,12 @@
             <scope>test</scope>
         </dependency>
         <!-- the database tests, see the database-tests profile -->
+        <!-- TestTransmitter, for the tests of several receivers on one database -->
+        <dependency>
+            <groupId>org.easyssf</groupId>
+            <artifactId>easyssf-test</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>testcontainers-postgresql</artifactId>

@@ -395,6 +395,19 @@ public final class TestTransmitter implements AutoCloseable {
     }
 
     /**
+     * @return the number of SETs queued and not yet acknowledged
+     */
+    public int queuedSetCount() {
+        this.queueLock.lock();
+        try {
+            return this.queuedSets.size();
+        }
+        finally {
+            this.queueLock.unlock();
+        }
+    }
+
+    /**
      * @return the number of poll requests received
      */
     public int pollRequests() {
