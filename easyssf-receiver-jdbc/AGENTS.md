@@ -3,8 +3,12 @@
 The JDBC stores of the receiver in plain SQL, over the small `SsfJdbcOperations` interface that a
 `DataSource` or a framework's template implements.
 
-- The schema is `src/main/resources/org/easyssf/receiver/jdbc/schema.sql`; it has to run on H2,
-  PostgreSQL and MySQL unchanged. Prefer standard SQL to dialect features; a result limit goes
+- The schema is `src/main/resources/org/easyssf/receiver/jdbc/schema.sql`, the current state for a
+  fresh installation; it has to run on H2, PostgreSQL and MySQL unchanged. Every schema change also
+  ships a migration script `migration/V<release>__<topic>.sql` (Flyway naming) and, for a new column,
+  an entry in the table's `JdbcSsfSchema.*Upgrades` list so that `prepareTable` adds it where it may
+  create tables. Keep changes additive with defaults; `migrationScriptsLeadToTheCurrentSchema` checks
+  that the scripts end at the current schema. Prefer standard SQL to dialect features; a result limit goes
   through `SsfJdbcOperations.query(sql, maxRows, ...)` (the driver's `setMaxRows`), not through
   `FETCH FIRST` or `LIMIT`.
 - Tests run on H2 in the normal build. `PostgresJdbcSsfStoresTests` and `MySqlJdbcSsfStoresTests`

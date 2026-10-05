@@ -22,6 +22,23 @@ public final class JdbcSsfSchema {
      */
     public static final String SCHEMA_LOCATION = "classpath:org/easyssf/receiver/jdbc/schema.sql";
 
+    /**
+     * Where the versioned migration scripts are, one per release that changed the schema,
+     * named for Flyway ({@code V0_1_0__...sql}) and plain SQL for any other tool.
+     */
+    public static final String MIGRATION_LOCATION = "classpath:org/easyssf/receiver/jdbc/migration/";
+
+    /**
+     * A column a current table has and the statement that adds it to a table of an older
+     * release.
+     *
+     * @param column the name of the column
+     * @param statement the {@code ALTER TABLE} that adds it, with a default for the rows
+     * that exist
+     */
+    public record Upgrade(String column, String statement) {
+    }
+
     private JdbcSsfSchema() {
     }
 
@@ -66,6 +83,16 @@ public final class JdbcSsfSchema {
                     PROCESSED_AT BIGINT NOT NULL,
                     CONSTRAINT %s_PK PRIMARY KEY (ISSUER, JTI)
                 )""".formatted(table, name), "CREATE INDEX %s_IX1 ON %s (PROCESSED_AT)".formatted(name, table));
+    }
+
+    /**
+     * The columns later releases added to the table of the {@link JdbcSsfJtiDedupStore}:
+     * {@code STATE} in 0.3.0.
+     */
+    public static List<Upgrade> processedSetUpgrades(String tablePrefix) {
+        String table = processedSetTable(tablePrefix);
+        return List
+            .of(new Upgrade("STATE", "ALTER TABLE " + table + " ADD STATE VARCHAR(16) DEFAULT 'PROCESSED' NOT NULL"));
     }
 
     /**
@@ -116,15 +143,66 @@ public final class JdbcSsfSchema {
      */
     public static void prepareTable(SsfJdbcOperations jdbc, String table, List<String> createStatements, boolean create,
             String hint) {
-        if (jdbc.tableExists(table)) {
+        prepareTable(jdbc, table, createStatements, List.of(), create, hint);
+    }
+
+    /**
+     * Makes sure a table exists and has the columns of this release.
+     * @param jdbc runs the statements
+     * @param table the name of the table
+     * @param createStatements the statements that create it
+     * @param upgrades the columns older releases lack and the statements that add them
+     * @param create whether to create a missing table, and to add missing columns to an
+     * existing one
+     * @param hint what else the application could do, appended to the message of the
+     * exception, may be {@code null}
+     * @throws IllegalStateException if the table does not exist or lacks a column and is
+     * not to be changed; the message carries the statements to run
+     */
+    public static void prepareTable(SsfJdbcOperations jdbc, String table, List<String> createStatements,
+            List<Upgrade> upgrades, boolean create, String hint) {
+        String orElse = (hint != null && !hint.isBlank()) ? ", " + hint : "";
+        if (!jdbc.tableExists(table)) {
+            if (!create) {
+                throw new IllegalStateException("The table " + table + " of the easyssf receiver does not exist. "
+                        + "Create it with the statements in " + SCHEMA_LOCATION + orElse + ".");
+            }
+            createStatements.forEach(jdbc::execute);
+            return;
+        }
+        List<Upgrade> missing = upgrades.stream()
+            .filter((upgrade) -> !columnExists(jdbc, table, upgrade.column()))
+            .toList();
+        if (missing.isEmpty()) {
             return;
         }
         if (!create) {
-            throw new IllegalStateException("The table " + table + " of the easyssf receiver does not exist. "
-                    + "Create it with the statements in " + SCHEMA_LOCATION
-                    + ((hint != null && !hint.isBlank()) ? ", " + hint : "") + ".");
+            throw new IllegalStateException("The table " + table + " of the easyssf receiver predates this release "
+                    + "and lacks the column(s) " + missing.stream().map(Upgrade::column).toList() + ". Run "
+                    + missing.stream().map(Upgrade::statement).toList() + " or the migration scripts in "
+                    + MIGRATION_LOCATION + orElse + ".");
         }
-        createStatements.forEach(jdbc::execute);
+        for (Upgrade upgrade : missing) {
+            try {
+                jdbc.execute(upgrade.statement());
+            }
+            catch (SsfJdbcException ex) {
+                // another instance starting at the same time may have added the column
+                if (!columnExists(jdbc, table, upgrade.column())) {
+                    throw ex;
+                }
+            }
+        }
+    }
+
+    private static boolean columnExists(SsfJdbcOperations jdbc, String table, String column) {
+        try {
+            jdbc.query("SELECT " + column + " FROM " + table + " WHERE 1 = 0", (row) -> row.getString(1));
+            return true;
+        }
+        catch (SsfJdbcException ex) {
+            return false;
+        }
     }
 
 }

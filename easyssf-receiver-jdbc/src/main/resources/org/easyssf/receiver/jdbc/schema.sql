@@ -1,9 +1,10 @@
--- Tables of the JDBC stores of the easyssf receiver.
+-- Tables of the JDBC stores of the easyssf receiver, as this release expects them (a fresh installation).
 -- Timestamps are milliseconds since the epoch. On Oracle use NUMBER(19) instead of BIGINT.
+-- Installations that migrate from release to release use the scripts in migration/ instead, one per release
+-- that changed the schema, named for Flyway.
 
 -- SETs that were processed or are being processed (STATE 'PROCESSED' / 'IN_PROGRESS', PROCESSED_AT the time of
 -- the last state change), see JdbcSsfJtiDedupStore.
--- Tables of easyssf 0.1.0 and 0.2.0 lack STATE: ALTER TABLE EASYSSF_PROCESSED_SET ADD STATE VARCHAR(16) DEFAULT 'PROCESSED' NOT NULL
 CREATE TABLE EASYSSF_PROCESSED_SET (
     ISSUER VARCHAR(255) NOT NULL,
     JTI VARCHAR(255) NOT NULL,
