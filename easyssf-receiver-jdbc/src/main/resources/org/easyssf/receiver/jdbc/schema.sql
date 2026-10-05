@@ -1,10 +1,13 @@
 -- Tables of the JDBC stores of the easyssf receiver.
 -- Timestamps are milliseconds since the epoch. On Oracle use NUMBER(19) instead of BIGINT.
 
--- SETs that were processed, see JdbcSsfJtiDedupStore
+-- SETs that were processed or are being processed (STATE 'PROCESSED' / 'IN_PROGRESS', PROCESSED_AT the time of
+-- the last state change), see JdbcSsfJtiDedupStore.
+-- Tables of easyssf 0.1.0 and 0.2.0 lack STATE: ALTER TABLE EASYSSF_PROCESSED_SET ADD STATE VARCHAR(16) DEFAULT 'PROCESSED' NOT NULL
 CREATE TABLE EASYSSF_PROCESSED_SET (
     ISSUER VARCHAR(255) NOT NULL,
     JTI VARCHAR(255) NOT NULL,
+    STATE VARCHAR(16) NOT NULL,
     PROCESSED_AT BIGINT NOT NULL,
     CONSTRAINT EASYSSF_PROCESSED_SET_PK PRIMARY KEY (ISSUER, JTI)
 );

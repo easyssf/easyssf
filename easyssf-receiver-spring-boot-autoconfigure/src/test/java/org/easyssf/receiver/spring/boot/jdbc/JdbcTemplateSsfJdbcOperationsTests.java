@@ -30,11 +30,12 @@ class JdbcTemplateSsfJdbcOperationsTests {
         JdbcSsfSchema.prepareTable(this.jdbc, JdbcSsfSchema.processedSetTable(prefix),
                 JdbcSsfSchema.createProcessedSetTable(prefix), true, null);
         assertThat(this.jdbc.tableExists(JdbcSsfSchema.processedSetTable(prefix))).isTrue();
-        this.jdbc.update("INSERT INTO EASYSSF_PROCESSED_SET (ISSUER, JTI, PROCESSED_AT) VALUES (?, ?, ?)", "i", "j",
-                System.currentTimeMillis());
-        assertThatExceptionOfType(SsfJdbcDuplicateKeyException.class).isThrownBy(
-                () -> this.jdbc.update("INSERT INTO EASYSSF_PROCESSED_SET (ISSUER, JTI, PROCESSED_AT) VALUES (?, ?, ?)",
-                        "i", "j", System.currentTimeMillis()));
+        this.jdbc.update(
+                "INSERT INTO EASYSSF_PROCESSED_SET (ISSUER, JTI, STATE, PROCESSED_AT) VALUES (?, ?, 'PROCESSED', ?)",
+                "i", "j", System.currentTimeMillis());
+        assertThatExceptionOfType(SsfJdbcDuplicateKeyException.class).isThrownBy(() -> this.jdbc.update(
+                "INSERT INTO EASYSSF_PROCESSED_SET (ISSUER, JTI, STATE, PROCESSED_AT) VALUES (?, ?, 'PROCESSED', ?)",
+                "i", "j", System.currentTimeMillis()));
         JdbcSsfJtiDedupStore store = new JdbcSsfJtiDedupStore(this.jdbc, prefix);
         store.setRetention(Duration.ofDays(1));
         assertThat(this.jdbc.query("SELECT COUNT(*) FROM EASYSSF_PROCESSED_SET", (row) -> row.getInt(1)))

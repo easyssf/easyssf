@@ -67,6 +67,7 @@ public final class SsfReceiverJdbcAutoConfiguration {
                 createTables(properties, dataSource), SCHEMA_HINT);
         JdbcSsfJtiDedupStore store = new JdbcSsfJtiDedupStore(operations, tablePrefix);
         store.setRetention(properties.getDedup().getRetention());
+        store.setLease(properties.getDedup().getLease());
         logger.info("Processed SETs are remembered in the table " + table);
         return store;
     }

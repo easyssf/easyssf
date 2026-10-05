@@ -410,6 +410,14 @@ public class SsfReceiverProperties extends SsfTransmitterProperties {
          */
         private Duration retention = Duration.ofDays(7);
 
+        /**
+         * How long a SET counts as being handled by the instance that claimed it. Another
+         * instance that receives the SET in that time leaves it for a redelivery; after
+         * it, the claim counts as abandoned by a crashed instance and the SET is handled
+         * again. Longer than the longest event handler.
+         */
+        private Duration lease = Duration.ofSeconds(60);
+
         public boolean isEnabled() {
             return this.enabled;
         }
@@ -432,6 +440,14 @@ public class SsfReceiverProperties extends SsfTransmitterProperties {
 
         public void setRetention(Duration retention) {
             this.retention = retention;
+        }
+
+        public Duration getLease() {
+            return this.lease;
+        }
+
+        public void setLease(Duration lease) {
+            this.lease = lease;
         }
 
     }

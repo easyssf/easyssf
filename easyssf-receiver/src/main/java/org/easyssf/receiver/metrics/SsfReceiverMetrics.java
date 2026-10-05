@@ -33,6 +33,12 @@ public interface SsfReceiverMetrics {
         DUPLICATE,
 
         /**
+         * The SET is being handled by another instance and has been left for a
+         * redelivery.
+         */
+        IN_PROGRESS,
+
+        /**
          * The SET was rejected because it is invalid.
          */
         INVALID,

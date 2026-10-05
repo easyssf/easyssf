@@ -2,9 +2,12 @@ package org.easyssf.receiver.jdbc;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -129,6 +132,49 @@ abstract class AbstractJdbcSharedReceiversTests {
         assertThat(a.handled).containsExactly(jti);
         assertThat(b.handled).isEmpty();
         assertThat(this.transmitter.acknowledgedSets()).containsExactly(jti, jti);
+    }
+
+    @Test
+    void setBeingHandledByOneInstanceIsNeitherHandledNorAcknowledgedByAnother() throws Exception {
+        Receiver a = receiver();
+        Receiver b = receiver();
+        String jti = queue("session-1");
+        CountDownLatch aIsHandling = new CountDownLatch(1);
+        CountDownLatch bHasPolled = new CountDownLatch(1);
+        // a's handler blocks until b has polled, then fails
+        a.afterHandling = () -> {
+            aIsHandling.countDown();
+            try {
+                assertThat(bHasPolled.await(10, TimeUnit.SECONDS)).isTrue();
+            }
+            catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
+            throw new IllegalStateException("store is down");
+        };
+        Thread aPolls = Thread.ofVirtual().start(() -> {
+            try {
+                a.poller.pollNow();
+            }
+            catch (RuntimeException ex) {
+                // the failed handler leaves the SET unacknowledged
+            }
+        });
+        assertThat(aIsHandling.await(10, TimeUnit.SECONDS)).isTrue();
+
+        // b receives the SET while a is still on it: in progress, neither handled nor
+        // acknowledged
+        assertThat(b.poller.pollNow()).isEqualTo(1);
+        assertThat(b.handled).isEmpty();
+        assertThat(transmitter.acknowledgedSets()).isEmpty();
+        bHasPolled.countDown();
+        aPolls.join(Duration.ofSeconds(10));
+        assertThat(transmitter.acknowledgedSets()).isEmpty();
+
+        // the redelivery is handled, by whichever instance polls
+        assertThat(b.poller.pollNow()).isEqualTo(1);
+        assertThat(b.handled).containsExactly(jti);
+        assertThat(transmitter.acknowledgedSets()).containsExactly(jti);
     }
 
     private Receiver receiver() {
