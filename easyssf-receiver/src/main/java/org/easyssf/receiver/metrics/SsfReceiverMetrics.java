@@ -1,6 +1,7 @@
 package org.easyssf.receiver.metrics;
 
 import java.time.Duration;
+import java.util.function.IntSupplier;
 
 import org.easyssf.core.SsfDeliveryMethod;
 
@@ -99,6 +100,15 @@ public interface SsfReceiverMetrics {
      */
     default void pollCompleted(String transmitter, Duration duration, boolean success) {
         pollCompleted(duration, success);
+    }
+
+    /**
+     * A poller started and tells how to read the number of acknowledgements and error
+     * reports it still owes its transmitter, for a gauge.
+     * @param transmitter the issuer of the transmitter, {@code null} if unknown
+     * @param pendingAcks reads the current number
+     */
+    default void pollerStarted(String transmitter, IntSupplier pendingAcks) {
     }
 
 }

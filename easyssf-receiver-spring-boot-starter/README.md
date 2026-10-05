@@ -195,7 +195,7 @@ easyssf:
   are kept in the table `EASYSSF_POLL_ACK` (see [Keeping state in the database](#keeping-state-in-the-database)),
   so that a SET handled right before a restart is acknowledged afterwards instead of being delivered
   again and skipped as a duplicate. `stop()` sends the pending acknowledgements with a last request.
-  The health details show them as `pendingAcks`.
+  The health details show them as `pendingAcks`, the gauge `easyssf.receiver.poll.pending-acks` too.
 - **Long polling**: by default every request asks the transmitter to answer at once
   (`returnImmediately: true`) and the transmitter is polled every `poll.interval`. With
   `easyssf.receiver.poll.long-polling=true` the poller keeps one request outstanding instead: the
@@ -380,6 +380,7 @@ If the application has a Micrometer `MeterRegistry` (for example with
 | `easyssf.receiver.sets` | counter | `transmitter` (the name of the transmitter, `default` for the one at `easyssf.receiver.*`), `delivery` (`push`, `poll`), `outcome` (`handled`, `duplicate`, `invalid`, `unauthenticated`, `unavailable`, `failed`) |
 | `easyssf.receiver.events` | counter | `transmitter`, `delivery`, `event` (for example `CaepSessionRevoked`) |
 | `easyssf.receiver.poll` | timer | `transmitter`, `outcome` (`success`, `failure`) |
+| `easyssf.receiver.poll.pending-acks` | gauge | `transmitter`; acknowledgements and error reports waiting for the next poll request, see [POLL delivery](#poll-delivery) |
 
 Switch it off with `easyssf.receiver.metrics.enabled=false`, or provide your own `SsfReceiverMetrics` bean.
 

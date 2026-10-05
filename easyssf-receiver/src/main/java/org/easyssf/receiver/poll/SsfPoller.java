@@ -260,6 +260,7 @@ public class SsfPoller {
                 return;
             }
             this.running = true;
+            this.metrics.pollerStarted(this.transmitter, this::getPendingAckCount);
             Thread thread = this.threadFactory.newThread(this::run);
             SsfAssert.notNull(thread, "the thread factory returned no thread");
             this.thread = thread;
