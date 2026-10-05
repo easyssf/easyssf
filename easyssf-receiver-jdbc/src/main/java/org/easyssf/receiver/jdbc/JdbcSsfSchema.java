@@ -39,6 +39,13 @@ public final class JdbcSsfSchema {
         return validPrefix(tablePrefix) + "REVOCATION";
     }
 
+    /**
+     * The name of the table of the {@link JdbcSsfPollAckStore}.
+     */
+    public static String pollAckTable(String tablePrefix) {
+        return validPrefix(tablePrefix) + "POLL_ACK";
+    }
+
     private static String validPrefix(String tablePrefix) {
         SsfAssert.isTrue(tablePrefix != null && tablePrefix.matches("[A-Za-z0-9_.]*"),
                 "The table prefix may only consist of letters, digits, '_' and '.'");
@@ -75,6 +82,25 @@ public final class JdbcSsfSchema {
                     EXPIRES_AT BIGINT NOT NULL,
                     CONSTRAINT %s_PK PRIMARY KEY (KIND, ISSUER, ID)
                 )""".formatted(table, name), "CREATE INDEX %s_IX1 ON %s (EXPIRES_AT)".formatted(name, table));
+    }
+
+    /**
+     * The statements that create the table of the {@link JdbcSsfPollAckStore}.
+     */
+    public static List<String> createPollAckTable(String tablePrefix) {
+        String table = pollAckTable(tablePrefix);
+        String name = table.replace('.', '_');
+        String tableDdl = """
+                CREATE TABLE %s (
+                    ISSUER VARCHAR(255) NOT NULL,
+                    JTI VARCHAR(255) NOT NULL,
+                    ERROR_CODE VARCHAR(64),
+                    ERROR_DESCRIPTION VARCHAR(1024),
+                    RECORDED_AT BIGINT NOT NULL,
+                    CONSTRAINT %s_PK PRIMARY KEY (ISSUER, JTI)
+                )""".formatted(table, name);
+        String indexDdl = "CREATE INDEX %s_IX1 ON %s (RECORDED_AT)".formatted(name, table);
+        return List.of(tableDdl, indexDdl);
     }
 
     /**

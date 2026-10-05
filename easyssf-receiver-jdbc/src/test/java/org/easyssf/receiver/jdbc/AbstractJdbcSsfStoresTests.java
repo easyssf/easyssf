@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.easyssf.core.event.SsfEventToken;
+import org.easyssf.receiver.poll.SsfPendingAck;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -47,6 +48,15 @@ abstract class AbstractJdbcSsfStoresTests {
                 JdbcSsfSchema.createProcessedSetTable(PREFIX), true, null);
         JdbcSsfSchema.prepareTable(this.jdbc, JdbcSsfSchema.revocationTable(PREFIX),
                 JdbcSsfSchema.createRevocationTable(PREFIX), true, null);
+        JdbcSsfSchema.prepareTable(this.jdbc, JdbcSsfSchema.pollAckTable(PREFIX),
+                JdbcSsfSchema.createPollAckTable(PREFIX), true, null);
+    }
+
+    private JdbcSsfPollAckStore ackStore() {
+        JdbcSsfPollAckStore store = new JdbcSsfPollAckStore(this.jdbc, PREFIX);
+        store.setRetention(Duration.ofDays(1));
+        store.setClock(this.clock);
+        return store;
     }
 
     private JdbcSsfJtiDedupStore dedupStore() {
@@ -71,6 +81,7 @@ abstract class AbstractJdbcSsfStoresTests {
             .toList();
         List<String> expected = new ArrayList<>(JdbcSsfSchema.createProcessedSetTable(PREFIX));
         expected.addAll(JdbcSsfSchema.createRevocationTable(PREFIX));
+        expected.addAll(JdbcSsfSchema.createPollAckTable(PREFIX));
         assertThat(statements).isEqualTo(expected.stream().map(AbstractJdbcSsfStoresTests::normalize).toList());
     }
 
@@ -199,6 +210,71 @@ abstract class AbstractJdbcSsfStoresTests {
         store.revokeSession(ISSUER, "session-2");
         assertThat(this.jdbc.query("SELECT ID FROM EASYSSF_REVOCATION", (row) -> row.getString(1)))
             .containsExactly("session-2");
+    }
+
+    @Test
+    void acknowledgementsWaitUntilRemovedAndAreSharedBetweenInstances() {
+        JdbcSsfPollAckStore store = ackStore();
+        store.record(ISSUER, SsfPendingAck.ack("jti-1"));
+        this.clock.advance(Duration.ofSeconds(1));
+        store.record(ISSUER, SsfPendingAck.error("jti-2", "invalid_request", "not a SET"));
+        store.record(ISSUER, SsfPendingAck.ack("jti-2"));
+        store.record("https://other.example", SsfPendingAck.ack("jti-1"));
+
+        assertThat(ackStore().size(ISSUER)).isEqualTo(2);
+        List<SsfPendingAck> pending = ackStore().pending(ISSUER, 10);
+        assertThat(pending).extracting(SsfPendingAck::jti).containsExactly("jti-1", "jti-2");
+        assertThat(pending.get(0).isError()).isFalse();
+        assertThat(pending.get(1).errorCode()).isEqualTo("invalid_request");
+        assertThat(pending.get(1).errorDescription()).isEqualTo("not a SET");
+        assertThat(ackStore().pending(ISSUER, 1)).extracting(SsfPendingAck::jti).containsExactly("jti-1");
+
+        ackStore().remove(ISSUER, List.of("jti-1", "jti-unknown"));
+        assertThat(ackStore().pending(ISSUER, 10)).extracting(SsfPendingAck::jti).containsExactly("jti-2");
+        assertThat(ackStore().size("https://other.example")).isEqualTo(1);
+    }
+
+    @Test
+    void manyAcknowledgementsAreListedWithALimitAndRemovedInChunks() {
+        JdbcSsfPollAckStore store = ackStore();
+        store.setDeleteBatchSize(50);
+        for (int i = 0; i < 250; i++) {
+            store.record(ISSUER, SsfPendingAck.ack("jti-%03d".formatted(i)));
+            this.clock.advance(Duration.ofMillis(1));
+        }
+        assertThat(store.size(ISSUER)).isEqualTo(250);
+        List<SsfPendingAck> pending = store.pending(ISSUER, 120);
+        assertThat(pending).hasSize(120);
+        assertThat(pending.get(0).jti()).isEqualTo("jti-000");
+        assertThat(pending.get(119).jti()).isEqualTo("jti-119");
+
+        store.remove(ISSUER, pending.stream().map(SsfPendingAck::jti).toList());
+        assertThat(store.size(ISSUER)).isEqualTo(130);
+        assertThat(store.pending(ISSUER, 1).get(0).jti()).isEqualTo("jti-120");
+        store.remove(ISSUER, List.of());
+        assertThat(store.size(ISSUER)).isEqualTo(130);
+    }
+
+    @Test
+    void longErrorDescriptionsAreCut() {
+        JdbcSsfPollAckStore store = ackStore();
+        store.record(ISSUER, SsfPendingAck.error("jti-1", "invalid_request", "x".repeat(5000)));
+        assertThat(store.pending(ISSUER, 1).get(0).errorDescription()).hasSize(1024);
+    }
+
+    @Test
+    void acknowledgementsAreForgottenAfterTheRetentionTime() {
+        JdbcSsfPollAckStore store = ackStore();
+        store.record(ISSUER, SsfPendingAck.ack("old"));
+        this.clock.advance(Duration.ofHours(12));
+        store.record(ISSUER, SsfPendingAck.ack("recent"));
+        this.clock.advance(Duration.ofHours(12).plusSeconds(1));
+        assertThat(store.purgeExpired()).isEqualTo(1);
+        assertThat(store.pending(ISSUER, 10)).extracting(SsfPendingAck::jti).containsExactly("recent");
+        // writing purges as well, at most once a minute
+        this.clock.advance(Duration.ofDays(1));
+        store.record(ISSUER, SsfPendingAck.ack("newer"));
+        assertThat(store.pending(ISSUER, 10)).extracting(SsfPendingAck::jti).containsExactly("newer");
     }
 
     @Test

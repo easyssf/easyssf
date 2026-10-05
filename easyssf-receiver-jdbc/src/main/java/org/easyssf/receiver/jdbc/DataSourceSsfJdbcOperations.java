@@ -50,8 +50,14 @@ public class DataSourceSsfJdbcOperations implements SsfJdbcOperations {
 
     @Override
     public <T> List<T> query(String sql, SsfJdbcRowMapper<T> mapper, Object... args) {
+        return query(sql, 0, mapper, args);
+    }
+
+    @Override
+    public <T> List<T> query(String sql, int maxRows, SsfJdbcRowMapper<T> mapper, Object... args) {
         try (Connection connection = this.dataSource.getConnection();
                 PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setMaxRows(Math.max(0, maxRows));
             bind(statement, args);
             try (ResultSet resultSet = statement.executeQuery()) {
                 List<T> rows = new ArrayList<>();

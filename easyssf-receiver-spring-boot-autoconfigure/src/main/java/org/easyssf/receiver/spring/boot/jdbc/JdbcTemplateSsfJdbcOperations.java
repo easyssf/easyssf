@@ -1,5 +1,6 @@
 package org.easyssf.receiver.spring.boot.jdbc;
 
+import java.sql.PreparedStatement;
 import java.util.List;
 
 import org.easyssf.receiver.jdbc.SsfJdbcDuplicateKeyException;
@@ -9,6 +10,7 @@ import org.easyssf.receiver.jdbc.SsfJdbcRowMapper;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.BadSqlGrammarException;
+import org.springframework.jdbc.core.ArgumentPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcOperations;
 import org.springframework.util.Assert;
 
@@ -43,6 +45,21 @@ public class JdbcTemplateSsfJdbcOperations implements SsfJdbcOperations {
     public <T> List<T> query(String sql, SsfJdbcRowMapper<T> mapper, Object... args) {
         try {
             return this.jdbc.query(sql, (row, index) -> mapper.map(row), args);
+        }
+        catch (DataAccessException ex) {
+            throw new SsfJdbcException("Could not run " + sql + ": " + ex.getMessage(), null, ex);
+        }
+    }
+
+    @Override
+    public <T> List<T> query(String sql, int maxRows, SsfJdbcRowMapper<T> mapper, Object... args) {
+        try {
+            return this.jdbc.query((connection) -> {
+                PreparedStatement statement = connection.prepareStatement(sql);
+                statement.setMaxRows(Math.max(0, maxRows));
+                new ArgumentPreparedStatementSetter(args).setValues(statement);
+                return statement;
+            }, (row, index) -> mapper.map(row));
         }
         catch (DataAccessException ex) {
             throw new SsfJdbcException("Could not run " + sql + ": " + ex.getMessage(), null, ex);

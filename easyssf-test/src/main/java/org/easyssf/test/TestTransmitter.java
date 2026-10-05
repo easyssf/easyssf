@@ -4,9 +4,9 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
-import java.util.Collections;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -14,7 +14,10 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.easyssf.core.event.SsfEventTypes;
 
@@ -52,7 +55,15 @@ public final class TestTransmitter implements AutoCloseable {
 
     private final List<Map<String, Object>> streams = new CopyOnWriteArrayList<>();
 
-    private final Map<String, String> queuedSets = Collections.synchronizedMap(new LinkedHashMap<>());
+    /**
+     * guarded by queueLock; a lock rather than synchronized, which pins virtual threads
+     * before JDK 24
+     */
+    private final Map<String, String> queuedSets = new LinkedHashMap<>();
+
+    private final ReentrantLock queueLock = new ReentrantLock();
+
+    private final Condition setQueued = this.queueLock.newCondition();
 
     private final List<String> acknowledgedSets = new CopyOnWriteArrayList<>();
 
@@ -65,6 +76,12 @@ public final class TestTransmitter implements AutoCloseable {
     private final List<Map<String, Object>> addedSubjects = new CopyOnWriteArrayList<>();
 
     private final AtomicInteger tokenRequests = new AtomicInteger();
+
+    private final AtomicInteger pollRequests = new AtomicInteger();
+
+    private volatile Map<String, Object> lastPollRequest = Map.of();
+
+    private volatile Duration longPollHold = Duration.ZERO;
 
     private volatile boolean available = true;
 
@@ -88,6 +105,10 @@ public final class TestTransmitter implements AutoCloseable {
         try {
             this.key = generateKey(2048, "test-key");
             this.server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+            // one thread per request, so that a held poll request does not block the
+            // others
+            this.server.setExecutor(
+                    Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("test-transmitter-", 0).factory()));
             this.server.createContext("/", (exchange) -> {
                 try {
                     handle(exchange);
@@ -212,29 +233,44 @@ public final class TestTransmitter implements AutoCloseable {
     }
 
     @SuppressWarnings("unchecked")
-    private Map<String, Object> poll(Map<String, Object> request) {
-        if (request.get("ack") instanceof List<?> acks) {
-            acks.forEach((jti) -> {
-                if (this.queuedSets.remove(jti) != null) {
-                    this.acknowledgedSets.add((String) jti);
+    private Map<String, Object> poll(Map<String, Object> request) throws InterruptedException {
+        this.pollRequests.incrementAndGet();
+        this.lastPollRequest = Map.copyOf(request);
+        this.queueLock.lock();
+        try {
+            if (request.get("ack") instanceof List<?> acks) {
+                acks.forEach((jti) -> {
+                    if (this.queuedSets.remove(jti) != null) {
+                        this.acknowledgedSets.add((String) jti);
+                    }
+                });
+            }
+            if (request.get("setErrs") instanceof Map<?, ?> errors) {
+                ((Map<String, Object>) errors).forEach((jti, error) -> {
+                    this.queuedSets.remove(jti);
+                    this.reportedErrors.put(jti, error);
+                });
+            }
+            int maxEvents = ((Number) request.getOrDefault("maxEvents", 10)).intValue();
+            // a long poll (returnImmediately false or absent, RFC 8936 section 2.5) is
+            // held until a
+            // SET is queued or the hold time elapses
+            if (!Boolean.TRUE.equals(request.get("returnImmediately")) && maxEvents > 0) {
+                long remaining = this.longPollHold.toNanos();
+                while (this.queuedSets.isEmpty() && remaining > 0) {
+                    remaining = this.setQueued.awaitNanos(remaining);
                 }
-            });
-        }
-        if (request.get("setErrs") instanceof Map<?, ?> errors) {
-            ((Map<String, Object>) errors).forEach((jti, error) -> {
-                this.queuedSets.remove(jti);
-                this.reportedErrors.put(jti, error);
-            });
-        }
-        int maxEvents = ((Number) request.getOrDefault("maxEvents", 10)).intValue();
-        Map<String, Object> sets = new LinkedHashMap<>();
-        synchronized (this.queuedSets) {
+            }
+            Map<String, Object> sets = new LinkedHashMap<>();
             this.queuedSets.entrySet()
                 .stream()
                 .limit(maxEvents)
                 .forEach((set) -> sets.put(set.getKey(), set.getValue()));
+            return Map.of("sets", sets, "moreAvailable", this.queuedSets.size() > sets.size());
         }
-        return Map.of("sets", sets, "moreAvailable", this.queuedSets.size() > sets.size());
+        finally {
+            this.queueLock.unlock();
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -330,7 +366,7 @@ public final class TestTransmitter implements AutoCloseable {
      */
     public void queueSet(String set) {
         try {
-            this.queuedSets.put(SignedJWT.parse(set).getJWTClaimsSet().getJWTID(), set);
+            queueSet(SignedJWT.parse(set).getJWTClaimsSet().getJWTID(), set);
         }
         catch (java.text.ParseException ex) {
             throw new IllegalArgumentException(ex);
@@ -338,7 +374,38 @@ public final class TestTransmitter implements AutoCloseable {
     }
 
     public void queueSet(String jti, String set) {
-        this.queuedSets.put(jti, set);
+        this.queueLock.lock();
+        try {
+            this.queuedSets.put(jti, set);
+            // wakes up a held poll request
+            this.setQueued.signalAll();
+        }
+        finally {
+            this.queueLock.unlock();
+        }
+    }
+
+    /**
+     * How long a poll request without {@code returnImmediately: true} is held while no
+     * SET is queued. Zero by default: the transmitter then answers at once, as if it did
+     * not support long polling.
+     */
+    public void setLongPollHold(Duration longPollHold) {
+        this.longPollHold = (longPollHold != null) ? longPollHold : Duration.ZERO;
+    }
+
+    /**
+     * @return the number of poll requests received
+     */
+    public int pollRequests() {
+        return this.pollRequests.get();
+    }
+
+    /**
+     * @return the body of the last poll request, empty if none was received
+     */
+    public Map<String, Object> lastPollRequest() {
+        return this.lastPollRequest;
     }
 
     public List<String> acknowledgedSets() {
@@ -366,7 +433,17 @@ public final class TestTransmitter implements AutoCloseable {
      */
     public void reset() {
         this.streams.clear();
-        this.queuedSets.clear();
+        this.queueLock.lock();
+        try {
+            this.queuedSets.clear();
+            this.setQueued.signalAll();
+        }
+        finally {
+            this.queueLock.unlock();
+        }
+        this.pollRequests.set(0);
+        this.lastPollRequest = Map.of();
+        this.longPollHold = Duration.ZERO;
         this.acknowledgedSets.clear();
         this.reportedErrors.clear();
         this.verificationRequests.clear();

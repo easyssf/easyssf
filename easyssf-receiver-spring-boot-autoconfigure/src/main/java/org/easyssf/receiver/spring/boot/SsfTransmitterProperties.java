@@ -363,6 +363,21 @@ public class SsfTransmitterProperties {
          */
         private int maxEvents = 100;
 
+        /**
+         * Whether to long poll (RFC 8936): the transmitter holds a request until SETs are
+         * available, and the next request goes out as soon as a response was handled.
+         * Otherwise the transmitter is asked to answer at once and polled every
+         * 'interval'. Requires a transmitter that holds requests; one that answers at
+         * once is polled every 'interval' nevertheless.
+         */
+        private boolean longPolling = false;
+
+        /**
+         * How long the transmitter holds a long poll request, part of the agreement with
+         * it. The request waits that long plus a margin for the response.
+         */
+        private Duration longPollingHold = Duration.ofSeconds(30);
+
         private final RateLimit rateLimit = new RateLimit();
 
         public URI getEndpointUrl() {
@@ -403,6 +418,22 @@ public class SsfTransmitterProperties {
 
         public void setMaxEvents(int maxEvents) {
             this.maxEvents = maxEvents;
+        }
+
+        public boolean isLongPolling() {
+            return this.longPolling;
+        }
+
+        public void setLongPolling(boolean longPolling) {
+            this.longPolling = longPolling;
+        }
+
+        public Duration getLongPollingHold() {
+            return this.longPollingHold;
+        }
+
+        public void setLongPollingHold(Duration longPollingHold) {
+            this.longPollingHold = longPollingHold;
         }
 
         public RateLimit getRateLimit() {

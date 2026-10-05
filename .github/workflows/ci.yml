@@ -200,7 +200,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-  # The JDBC stores against PostgreSQL in Docker, see the database-tests profile of easyssf-receiver-jdbc.
+  # The JDBC stores against PostgreSQL and MySQL in Docker, see the database-tests profile of easyssf-receiver-jdbc.
   database:
     needs: build
     runs-on: ubuntu-latest
@@ -219,7 +219,7 @@ jobs:
           name: easyssf-jars
           path: ~/.m2/repository/org/easyssf/
 
-      - name: Test the stores on PostgreSQL
+      - name: Test the stores on PostgreSQL and MySQL
         run: ./mvnw -pl easyssf-receiver-jdbc -Pdatabase-tests verify
 
       - name: Upload test reports

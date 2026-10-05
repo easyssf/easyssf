@@ -95,6 +95,7 @@ public class SsfReceiverHealthIndicator implements HealthIndicator {
             details.put("lastPoll", poller.getLastPollAt());
             details.put("lastSuccessfulPoll", lastSuccess);
             details.put("pollError", error);
+            details.put("pendingAcks", poller.getPendingAckCount());
             Instant pausedUntil = poller.getPausedUntil();
             if (pausedUntil != null && pausedUntil.isAfter(Instant.now())) {
                 details.put("pausedUntil", pausedUntil);

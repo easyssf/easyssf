@@ -34,6 +34,10 @@ class SsfPollerTests {
 
     private final List<RuntimeException> failures = new ArrayList<>();
 
+    /** runs after a SET was handled, before it is acknowledged */
+    private Runnable afterHandling = () -> {
+    };
+
     private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     private SsfPoller poller;
@@ -41,6 +45,7 @@ class SsfPollerTests {
     @BeforeEach
     void setUp() {
         transmitter.reset();
+        transmitter.setAvailable(true);
         this.poller = poller(() -> URI.create(transmitter.pollUri()), TestTransmitter.ACCESS_TOKEN);
     }
 
@@ -59,6 +64,7 @@ class SsfPollerTests {
                 throw this.failures.remove(0);
             }
             this.handled.add(eventContext.eventToken().jti());
+            this.afterHandling.run();
         };
         SsfHttpClient http = new JdkSsfHttpClient();
         NimbusSsfSetVerifier verifier = new NimbusSsfSetVerifier(transmitter.issuer(), transmitter::jwksUri, http);
@@ -84,12 +90,41 @@ class SsfPollerTests {
     }
 
     private static List<Thread> pollerThreads() {
+        return pollerThreads("ssf-poller");
+    }
+
+    private static List<Thread> pollerThreads(String name) {
         return Thread.getAllStackTraces()
             .keySet()
             .stream()
-            .filter((thread) -> thread.getName().equals("ssf-poller"))
+            .filter((thread) -> thread.getName().equals(name))
             .filter(Thread::isAlive)
             .toList();
+    }
+
+    @Test
+    void pollsOnTheThreadOfTheGivenFactory() {
+        this.poller.setThreadFactory(Thread.ofPlatform().name("ssf-poller-idp").daemon().factory());
+        this.poller.setInitialDelay(Duration.ofHours(1));
+        this.poller.start();
+        assertThat(pollerThreads("ssf-poller-idp")).hasSize(1);
+        assertThat(pollerThreads()).isEmpty();
+        this.poller.stop();
+        await().atMost(Duration.ofSeconds(5))
+            .untilAsserted(() -> assertThat(pollerThreads("ssf-poller-idp")).isEmpty());
+    }
+
+    @Test
+    void pollsOnAVirtualThreadIfTheFactoryMakesOne() {
+        transmitter.setLongPollHold(Duration.ofSeconds(5));
+        this.poller.setLongPolling(Duration.ofSeconds(5));
+        this.poller.setThreadFactory(Thread.ofVirtual().name("ssf-poller-virtual").factory());
+        this.poller.start();
+        await().atMost(Duration.ofSeconds(5)).until(() -> transmitter.pollRequests() >= 1);
+        String jti = queue("session-1");
+        await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(this.handled).containsExactly(jti));
+        this.poller.stop();
+        assertThat(this.poller.isRunning()).isFalse();
     }
 
     @Test
@@ -177,6 +212,123 @@ class SsfPollerTests {
         assertThatIllegalStateException().isThrownBy(unauthenticated::pollNow).withMessageContaining("401");
         assertThat(this.meterRegistry.get("easyssf.receiver.poll").tag("outcome", "failure").timer().count())
             .isEqualTo(1);
+    }
+
+    @Test
+    void acknowledgementsWaitInTheStoreUntilARequestCarriedThem() {
+        InMemorySsfPollAckStore store = new InMemorySsfPollAckStore();
+        this.poller.setAckStore(store);
+        this.poller.setTransmitter(transmitter.issuer());
+        String jti = queue("session-1");
+        transmitter.queueSet("broken", "not-a-set");
+        // the transmitter goes away between handling the SETs and the request that
+        // acknowledges them
+        this.afterHandling = () -> transmitter.setAvailable(false);
+
+        assertThatIllegalStateException().isThrownBy(this.poller::pollNow).withMessageContaining("503");
+
+        assertThat(this.handled).containsExactly(jti);
+        assertThat(transmitter.acknowledgedSets()).isEmpty();
+        assertThat(store.pending(transmitter.issuer(), 10)).extracting(SsfPendingAck::jti)
+            .containsExactly(jti, "broken");
+        assertThat(this.poller.getPendingAckCount()).isEqualTo(2);
+
+        transmitter.setAvailable(true);
+        this.afterHandling = () -> {
+        };
+        this.poller.pollNow();
+        assertThat(transmitter.acknowledgedSets()).containsExactly(jti);
+        assertThat(transmitter.reportedErrors()).containsOnlyKeys("broken");
+        assertThat(store.size(transmitter.issuer())).isZero();
+    }
+
+    @Test
+    void acknowledgementsAreSentInBatches() {
+        this.poller.setMaxAckBatch(2);
+        List<String> queued = List.of(queue("session-1"), queue("session-2"), queue("session-3"));
+
+        assertThat(this.poller.pollNow()).isEqualTo(3);
+        // the request after handling carried two, the third waits for the next poll
+        assertThat(transmitter.acknowledgedSets()).containsExactly(queued.get(0), queued.get(1));
+        assertThat(this.poller.getPendingAckCount()).isEqualTo(1);
+
+        this.poller.pollNow();
+        assertThat(transmitter.acknowledgedSets()).containsExactlyElementsOf(queued);
+        assertThat(this.poller.getPendingAckCount()).isZero();
+    }
+
+    @Test
+    void stopFlushesThePendingAcknowledgements() {
+        this.poller.setInitialDelay(Duration.ofHours(1));
+        String jti = queue("session-1");
+        this.afterHandling = () -> transmitter.setAvailable(false);
+        assertThatIllegalStateException().isThrownBy(this.poller::pollNow);
+        assertThat(this.poller.getPendingAckCount()).isEqualTo(1);
+        transmitter.setAvailable(true);
+
+        this.poller.start();
+        this.poller.stop();
+
+        assertThat(transmitter.acknowledgedSets()).containsExactly(jti);
+        assertThat(this.poller.getPendingAckCount()).isZero();
+    }
+
+    @Test
+    void longPollIsHeldUntilASetArrives() throws Exception {
+        transmitter.setLongPollHold(Duration.ofSeconds(5));
+        this.poller.setLongPolling(Duration.ofSeconds(5));
+        this.poller.setInterval(Duration.ofSeconds(30));
+        this.poller.start();
+        await().atMost(Duration.ofSeconds(5)).until(() -> transmitter.pollRequests() >= 1);
+        assertThat(transmitter.lastPollRequest()).containsEntry("returnImmediately", false);
+        assertThat(this.handled).isEmpty();
+
+        long queuedAt = System.nanoTime();
+        String jti = queue("session-1");
+        await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(this.handled).containsExactly(jti));
+        // handled while the request was held, long before the hold time elapsed
+        assertThat(Duration.ofNanos(System.nanoTime() - queuedAt)).isLessThan(Duration.ofSeconds(3));
+        // the next request went out right away and carries the acknowledgement
+        await().atMost(Duration.ofSeconds(3))
+            .untilAsserted(() -> assertThat(transmitter.acknowledgedSets()).containsExactly(jti));
+        assertThat(transmitter.lastPollRequest()).containsEntry("returnImmediately", false);
+        this.poller.stop();
+    }
+
+    @Test
+    void longPollAgainstATransmitterThatAnswersAtOnceWaitsTheInterval() {
+        // the test transmitter does not hold by default
+        this.poller.setLongPolling(Duration.ofSeconds(5));
+        this.poller.setInterval(Duration.ofMinutes(5));
+        this.poller.start();
+        await().atMost(Duration.ofSeconds(5)).until(() -> transmitter.pollRequests() >= 1);
+        await().during(Duration.ofSeconds(1))
+            .atMost(Duration.ofSeconds(2))
+            .untilAsserted(() -> assertThat(transmitter.pollRequests()).isEqualTo(1));
+        this.poller.stop();
+    }
+
+    @Test
+    void stopInterruptsAHeldLongPoll() {
+        transmitter.setLongPollHold(Duration.ofSeconds(30));
+        this.poller.setLongPolling(Duration.ofSeconds(30));
+        this.poller.start();
+        await().atMost(Duration.ofSeconds(5)).until(() -> transmitter.pollRequests() >= 1);
+        long stoppedAt = System.nanoTime();
+        this.poller.stop();
+        assertThat(Duration.ofNanos(System.nanoTime() - stoppedAt)).isLessThan(Duration.ofSeconds(5));
+        assertThat(this.poller.isRunning()).isFalse();
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(pollerThreads()).isEmpty());
+    }
+
+    @Test
+    void pollNowAsksForAnImmediateAnswerEvenWhenLongPolling() {
+        transmitter.setLongPollHold(Duration.ofSeconds(30));
+        this.poller.setLongPolling(Duration.ofSeconds(30));
+        long started = System.nanoTime();
+        assertThat(this.poller.pollNow()).isZero();
+        assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(5));
+        assertThat(transmitter.lastPollRequest()).containsEntry("returnImmediately", true);
     }
 
     private String queue(String sessionId) {

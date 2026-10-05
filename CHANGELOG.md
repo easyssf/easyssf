@@ -6,6 +6,30 @@ The notable changes of every release. The section of a version is the text of it
 
 ## [Unreleased]
 
+### Added
+
+- POLL delivery keeps the acknowledgements and error reports it owes the transmitter in an
+  `SsfPollAckStore` until a poll request has carried them: in memory by default, or durably with
+  `JdbcSsfPollAckStore` (table `EASYSSF_POLL_ACK`, auto-configured with the other JDBC stores,
+  `easyssf.receiver.jdbc.ack-retention`), so that a SET handled right before a restart is
+  acknowledged afterwards instead of being delivered again. `SsfPoller.stop()` sends the pending
+  acknowledgements with a last request; the health details show them as `pendingAcks`.
+- Long polling (RFC 8936, section 2.5): `SsfPoller.setLongPolling(hold)` keeps one request
+  outstanding that the transmitter holds until SETs are available; `easyssf.receiver.poll.long-polling`
+  and `poll.long-polling-hold` in the Spring Boot starter, off by default. `SsfHttpRequest` carries an
+  optional timeout per request. `TestTransmitter` holds long polls for `setLongPollHold`.
+  `SsfPoller.setThreadFactory` lets a framework create the polling thread, or use a virtual one.
+
+### Changed
+
+- The schema of `easyssf-receiver-jdbc` has a third table, `EASYSSF_POLL_ACK`; create it with the
+  statements of `schema.sql` where the tables are not created on startup.
+- `SsfPoller` polls on a thread of its own instead of a scheduled executor, and the in-memory stores
+  lock with `ReentrantLock` instead of `synchronized`, which pins virtual threads before JDK 24.
+- `SsfJdbcOperations.query(sql, maxRows, mapper, args)` limits a result through the JDBC driver, so
+  the stores need no dialect-specific SQL; the JDBC stores are now tested on MySQL as well as on H2
+  and PostgreSQL.
+
 ## [0.2.0] - 2026-10-04
 
 SCIM Events (RFC 9967) for the receiver: the event types, the `scim` subject, a typed payload and a

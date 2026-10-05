@@ -56,8 +56,8 @@ to submit the change under the project's license. The CI checks it for every com
   `target/central-publishing/central-bundle.zip` for `_remote.repositories`. The settings step of the
   workflows that scopes the Central credentials (`repositoryOrigins`, needed by 3.10) stays: Maven 3.9
   only warns about the unknown tag.
-- **Database tests**: the JDBC stores are tested on H2 by the normal build and on PostgreSQL in a
-  Testcontainers container by the tests tagged `database`, which the normal build excludes:
+- **Database tests**: the JDBC stores are tested on H2 by the normal build and on PostgreSQL and
+  MySQL in Testcontainers containers by the tests tagged `database`, which the normal build excludes:
   `./mvnw -pl easyssf-receiver-jdbc -Pdatabase-tests verify` runs them (Docker required). CI runs
   them in the `database` job.
 - **Test logging**: `easyssf-receiver/src/test/resources/logback-test.xml` keeps the tests of the plain
@@ -83,7 +83,7 @@ GitHub Actions, see [`.github/workflows`](.github/workflows):
   3. Behind `build`: `spring` (the Spring Boot modules on Java 21), `jdk` (every module on Java 25,
      and on the newest JDK as a job that does not fail the build; it passes
      `-Dbytebuddy.experimental=true` in case Mockito's Byte Buddy does not know the class file
-     version yet), and `database` (the stores of `easyssf-receiver-jdbc` on PostgreSQL).
+     version yet), and `database` (the stores of `easyssf-receiver-jdbc` on PostgreSQL and MySQL).
   4. `status` is green when every job that had to run succeeded; skipped jobs count as green. It is
      the one check to require in the branch protection of `main`, the others come and go with the
      change.

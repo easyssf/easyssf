@@ -6,9 +6,11 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.easyssf.receiver.jdbc.JdbcSsfExpiringStore;
 import org.easyssf.receiver.jdbc.JdbcSsfJtiDedupStore;
+import org.easyssf.receiver.jdbc.JdbcSsfPollAckStore;
 import org.easyssf.receiver.jdbc.JdbcSsfSchema;
 import org.easyssf.receiver.jdbc.JdbcSsfTokenRevocationStore;
 import org.easyssf.receiver.jdbc.SsfJdbcOperations;
+import org.easyssf.receiver.poll.SsfPollAckStore;
 import org.easyssf.receiver.revocation.SsfTokenRevocationStore;
 import org.easyssf.receiver.set.SsfJtiDedupStore;
 import org.easyssf.receiver.spring.boot.SsfReceiverProperties;
@@ -85,6 +87,27 @@ public final class SsfReceiverJdbcAutoConfiguration {
         logger.info("Revoked sessions and subjects are kept in the table " + table);
         return new JdbcSsfTokenRevocationStore(operations, tablePrefix,
                 properties.getResourceServer().getRevocationTtl());
+    }
+
+    /**
+     * Keeps the acknowledgements a polling receiver owes its transmitter, so that a SET
+     * handled right before a restart is acknowledged afterwards instead of delivered
+     * again.
+     */
+    @Bean
+    @ConditionalOnMissingBean(SsfPollAckStore.class)
+    JdbcSsfPollAckStore jdbcSsfPollAckStore(JdbcOperations jdbc, ObjectProvider<DataSource> dataSource,
+            SsfReceiverProperties properties) {
+        String tablePrefix = properties.getJdbc().getTablePrefix();
+        String table = JdbcSsfSchema.pollAckTable(tablePrefix);
+        SsfJdbcOperations operations = new JdbcTemplateSsfJdbcOperations(jdbc);
+        JdbcSsfSchema.prepareTable(operations, table, JdbcSsfSchema.createPollAckTable(tablePrefix),
+                createTables(properties, dataSource), SCHEMA_HINT);
+        JdbcSsfPollAckStore store = new JdbcSsfPollAckStore(operations, tablePrefix);
+        store.setRetention(properties.getJdbc().getAckRetention());
+        store.setDeleteBatchSize(properties.getJdbc().getAckDeleteBatchSize());
+        logger.info("Pending poll acknowledgements are kept in the table " + table);
+        return store;
     }
 
     /**

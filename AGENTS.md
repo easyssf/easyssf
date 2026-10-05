@@ -65,7 +65,7 @@ pins a released version. Consequences for a change here:
 - `-o` (offline) is fine for everything but dependency updates; `-q` keeps the output short, then
   check `target/surefire-reports/*.xml` for `failures="0"` and `errors="0"`.
 - Two test groups are excluded from the normal build and need Docker: the `database` tag of
-  `easyssf-receiver-jdbc` (PostgreSQL, `-Pdatabase-tests`) and the `conformance` tag of the
+  `easyssf-receiver-jdbc` (PostgreSQL and MySQL, `-Pdatabase-tests`) and the `conformance` tag of the
   conformance tests (`-Pconformance`, minutes per plan). Run them only when a change touches the
   stores or the conformance harness, and say so.
 - Spotless applies the Spring Java Format conventions (`etc/eclipse-formatter.prefs`): 4 spaces,
