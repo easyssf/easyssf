@@ -157,6 +157,30 @@ class StepUpHandler implements SsfEventHandler {
 }
 ```
 
+For CAEP and RISC events there are typed handlers that spare you the claim names: `SsfCaepEventHandler`
+dispatches every CAEP event of a SET to a method per event (`onSessionRevoked`, `onCredentialChange`,
+`onAssuranceLevelChange`, `onDeviceComplianceChange`, `onRiskLevelChange`, ...) with an `SsfCaepEvent`
+that reads the common claims of CAEP section 2 (`eventTimestamp()`, `initiatingEntity()`, `reasonAdmin()`
+and `reasonUser()` by language tag) and the event-specific ones (`credentialType()`, `changeType()`,
+`currentLevel()`, `changeDirection()`, `currentStatus()`, `amr()`, `principal()`, ...). `SsfRiscEventHandler`
+does the same for RISC (`onAccountDisabled`, `onIdentifierChanged`, `onCredentialCompromise`, ...) with
+`SsfRiscEvent` (`reason()`, `newValue()`, `credentialType()`). An event type in the CAEP or RISC namespace
+that this version does not know reaches `onOtherCaepEvent` or `onOtherRiscEvent`, with the common claims
+typed and the rest in `payload()`; the raw map stays available through `eventContext.eventFor(...)`.
+
+```java
+class StepUpHandler extends SsfCaepEventHandler {
+
+    @Override
+    protected void onAssuranceLevelChange(SsfCaepEvent event, SsfEventContext eventContext) {
+        if ("decrease".equals(event.changeDirection())) {
+            stepUp.require(eventContext.subject().subject(), event.currentLevel());
+        }
+    }
+
+}
+```
+
 **A SET is handled at least once, not exactly once**, so handlers must be idempotent. If a handler
 throws, the SET is not acknowledged and the transmitter is expected to deliver it again, in which case
 all handlers run again, possibly on another instance of the application. With a shared dedup store a
@@ -308,6 +332,8 @@ Ready-made pieces for the common reactions:
   access tokens of revoked sessions and users.
 - `SsfSessionTerminationEventHandler` + your `SsfSessionTerminator` to end local sessions;
   `SsfSubjectClaimsMatcher` tells whether the subject of an event matches the claims of a user.
+- `SsfCaepEventHandler` and `SsfRiscEventHandler` to react to CAEP and RISC events by kind, with
+  `SsfCaepEvent` and `SsfRiscEvent` from `easyssf-core` for the typed payload.
 - `SsfScimEventHandler` to react to SCIM Events (RFC 9967) by operation, with `SsfScimEvent` and
   `SsfScimSubject` from `easyssf-core` for the payload and the resource.
 - `SsfStreamClient` and `SsfStreamRegistrar` for stream management,

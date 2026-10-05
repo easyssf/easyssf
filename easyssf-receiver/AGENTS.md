@@ -6,7 +6,8 @@ classes; they must not need anything but SLF4J, Nimbus and the JDK HTTP client.
 - Packages by concern: `set` (verification, de-duplication, `SsfSetProcessor` runs the
   handlers), `push` and `poll` (delivery), `stream` and `transmitter` (stream management,
   metadata, tokens), `event` (`SsfEventHandler`, `SsfEventContext`), `revocation`, `session`,
-  `scim` (handlers for the common reactions), `metrics`, `http`.
+  `caep`, `risc`, `scim` (handlers for the common reactions and typed dispatch by event), `metrics`,
+  `http`.
 - `SsfSetProcessor` hands every verified SET to every handler, catches their exceptions, and
   reports a failure so the transmitter delivers again. Handlers must therefore be idempotent, and
   the processor must never mark a SET as seen before all handlers succeeded.

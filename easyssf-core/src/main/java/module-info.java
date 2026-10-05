@@ -4,8 +4,10 @@
  */
 module org.easyssf.core {
     exports org.easyssf.core;
+    exports org.easyssf.core.caep;
     exports org.easyssf.core.event;
     exports org.easyssf.core.metadata;
+    exports org.easyssf.core.risc;
     exports org.easyssf.core.scim;
     exports org.easyssf.core.stream;
     exports org.easyssf.core.support;

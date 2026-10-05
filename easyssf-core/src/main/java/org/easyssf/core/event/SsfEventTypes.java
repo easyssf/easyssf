@@ -67,6 +67,13 @@ public final class SsfEventTypes {
     public static final String RISC_RECOVERY_INFORMATION_CHANGED = RISC + "recovery-information-changed";
 
     /**
+     * RISC 1.0, section 2.11: all sessions of the account were revoked. Deprecated by
+     * RISC in favour of {@link #CAEP_SESSION_REVOKED}, but still emitted by some
+     * transmitters.
+     */
+    public static final String RISC_SESSIONS_REVOKED = RISC + "sessions-revoked";
+
+    /**
      * SCIM Events (RFC 9967, section 2.3.1): the resource was added to the event feed.
      */
     public static final String SCIM_FEED_ADD = SCIM + "feed:add";
@@ -162,6 +169,7 @@ public final class SsfEventTypes {
         register("RiscOptOutEffective", RISC_OPT_OUT_EFFECTIVE);
         register("RiscRecoveryActivated", RISC_RECOVERY_ACTIVATED);
         register("RiscRecoveryInformationChanged", RISC_RECOVERY_INFORMATION_CHANGED);
+        register("RiscSessionsRevoked", RISC_SESSIONS_REVOKED);
         register("ScimFeedAdd", SCIM_FEED_ADD);
         register("ScimFeedRemove", SCIM_FEED_REMOVE);
         register("ScimProvCreateNotice", SCIM_PROV_CREATE_NOTICE);
@@ -232,6 +240,24 @@ public final class SsfEventTypes {
      */
     public static boolean isAlias(String name) {
         return name != null && URI_BY_ALIAS.containsKey(name);
+    }
+
+    /**
+     * @return whether the event type is in the CAEP namespace
+     * ({@code https://schemas.openid.net/secevent/caep/event-type/}), one of the events
+     * of CAEP 1.0 or a later one
+     */
+    public static boolean isCaepEvent(String aliasOrUri) {
+        return aliasOrUri != null && resolve(aliasOrUri).startsWith(CAEP);
+    }
+
+    /**
+     * @return whether the event type is in the RISC namespace
+     * ({@code https://schemas.openid.net/secevent/risc/event-type/}), one of the events
+     * of RISC 1.0 or a later one
+     */
+    public static boolean isRiscEvent(String aliasOrUri) {
+        return aliasOrUri != null && resolve(aliasOrUri).startsWith(RISC);
     }
 
     /**

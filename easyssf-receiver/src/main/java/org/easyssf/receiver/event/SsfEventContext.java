@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
 
+import org.easyssf.core.event.SsfEventTimestamps;
 import org.easyssf.core.event.SsfEventToken;
 import org.easyssf.core.event.SsfEventTypes;
 import org.easyssf.core.event.SsfSubject;
@@ -98,12 +99,8 @@ public final class SsfEventContext {
      */
     public Instant eventTimestamp(String aliasOrUri) {
         Map<String, Object> event = eventFor(aliasOrUri);
-        if (event != null && event.get("event_timestamp") instanceof Number timestamp) {
-            long value = timestamp.longValue();
-            // CAEP defines seconds since epoch, some transmitters send milliseconds
-            return (value > 100_000_000_000L) ? Instant.ofEpochMilli(value) : Instant.ofEpochSecond(value);
-        }
-        return this.eventToken.iat();
+        Instant timestamp = (event != null) ? SsfEventTimestamps.from(event.get("event_timestamp")) : null;
+        return (timestamp != null) ? timestamp : this.eventToken.iat();
     }
 
 }
