@@ -202,13 +202,13 @@ abstract class AbstractJdbcSharedReceiversTests {
             }
 
             @Override
-            public void processed(SsfEventToken eventToken) {
+            public void processed(SsfEventToken eventToken, Claim claim) {
                 throw new IllegalStateException("the instance died");
             }
 
             @Override
-            public void forget(SsfEventToken eventToken) {
-                AbstractJdbcSharedReceiversTests.this.dedupStore.forget(eventToken);
+            public void forget(SsfEventToken eventToken, Claim claim) {
+                AbstractJdbcSharedReceiversTests.this.dedupStore.forget(eventToken, claim);
             }
         });
         Receiver b = receiver(dedupStore());
@@ -236,11 +236,53 @@ abstract class AbstractJdbcSharedReceiversTests {
     }
 
     @Test
+    void lateFailureOfTheFirstInstanceDoesNotForgetTheSetTheSecondHandledAfterTheLease() throws Exception {
+        Receiver a = receiver();
+        Receiver b = receiver();
+        String jti = queue("session-1");
+        CountDownLatch aIsHandling = new CountDownLatch(1);
+        CountDownLatch bHasHandled = new CountDownLatch(1);
+        // a's handler outlives the lease, then fails
+        a.afterHandling = () -> {
+            aIsHandling.countDown();
+            try {
+                assertThat(bHasHandled.await(10, TimeUnit.SECONDS)).isTrue();
+            }
+            catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
+            throw new IllegalStateException("store is down");
+        };
+        Thread aPolls = Thread.ofVirtual().start(() -> {
+            try {
+                a.poller.pollNow();
+            }
+            catch (RuntimeException ex) {
+                // the failed handler leaves the SET unacknowledged by a
+            }
+        });
+        assertThat(aIsHandling.await(10, TimeUnit.SECONDS)).isTrue();
+
+        // the lease expires while a is still on the SET: b takes it over and handles it
+        this.clock.advance(Duration.ofSeconds(61));
+        assertThat(b.poller.pollNow()).isEqualTo(1);
+        assertThat(b.handled).containsExactly(jti);
+        assertThat(this.transmitter.acknowledgedSets()).containsExactly(jti);
+        assertThat(state(jti)).isEqualTo("PROCESSED");
+
+        // a's late failure must not forget b's success
+        bHasHandled.countDown();
+        aPolls.join(Duration.ofSeconds(10));
+        assertThat(state(jti)).isEqualTo("PROCESSED");
+        assertThat(this.dedupStore.claim(token(jti))).isEqualTo(SsfJtiDedupStore.Claim.processed());
+    }
+
+    @Test
     void setClaimedByAnInstanceThatDiedBeforeItsHandlerRanIsHandledAfterTheLease() {
         Receiver b = receiver(dedupStore());
         String jti = queue("session-1");
         // the dead instance's claim, left behind in the shared table
-        assertThat(this.dedupStore.claim(token(jti))).isEqualTo(SsfJtiDedupStore.Claim.NEW);
+        assertThat(this.dedupStore.claim(token(jti)).isNew()).isTrue();
 
         assertThat(b.poller.pollNow()).isEqualTo(1);
         assertThat(b.handled).isEmpty();
@@ -255,14 +297,15 @@ abstract class AbstractJdbcSharedReceiversTests {
     @Test
     void concurrentClaimsOfOneSetYieldExactlyOneNew() throws Exception {
         String jti = "jti-concurrent";
-        assertThat(claimConcurrently(jti, 8)).containsExactly(SsfJtiDedupStore.Claim.NEW);
+        assertThat(claimConcurrently(jti, 8)).hasSize(1);
         assertThat(state(jti)).isEqualTo("IN_PROGRESS");
 
         // the lease expired: exactly one of the concurrent take-overs wins
         this.clock.advance(Duration.ofSeconds(61));
-        assertThat(claimConcurrently(jti, 8)).containsExactly(SsfJtiDedupStore.Claim.NEW);
+        List<SsfJtiDedupStore.Claim> takenOver = claimConcurrently(jti, 8);
+        assertThat(takenOver).hasSize(1);
 
-        this.dedupStore.processed(token(jti));
+        this.dedupStore.processed(token(jti), takenOver.get(0));
         assertThat(claimConcurrently(jti, 8)).isEmpty();
         assertThat(state(jti)).isEqualTo("PROCESSED");
     }
@@ -289,7 +332,7 @@ abstract class AbstractJdbcSharedReceiversTests {
                 results.add(claim.get(30, TimeUnit.SECONDS));
             }
             assertThat(results).doesNotContain((SsfJtiDedupStore.Claim) null);
-            return results.stream().filter((claim) -> claim == SsfJtiDedupStore.Claim.NEW).toList();
+            return results.stream().filter(SsfJtiDedupStore.Claim::isNew).toList();
         }
     }
 

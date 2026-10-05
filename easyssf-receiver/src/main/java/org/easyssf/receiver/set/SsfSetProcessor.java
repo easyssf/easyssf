@@ -159,8 +159,10 @@ public class SsfSetProcessor {
             throw ex;
         }
         issuer = eventToken.iss();
+        SsfJtiDedupStore.Claim claim = null;
         if (this.dedupStore != null) {
-            switch (this.dedupStore.claim(eventToken)) {
+            claim = this.dedupStore.claim(eventToken);
+            switch (claim.state()) {
                 case PROCESSED -> {
                     logger.debug("Skipping SET " + eventToken.jti() + ", it was processed before");
                     this.metrics.setReceived(issuer, deliveryMethod, SetOutcome.DUPLICATE);
@@ -199,14 +201,14 @@ public class SsfSetProcessor {
             }
         }
         if (failure != null) {
-            if (this.dedupStore != null) {
-                this.dedupStore.forget(eventToken);
+            if (claim != null) {
+                this.dedupStore.forget(eventToken, claim);
             }
             this.metrics.setReceived(issuer, deliveryMethod, SetOutcome.FAILED);
             throw new SsfEventHandlingException("Could not handle SET " + eventToken.jti(), failure);
         }
-        if (this.dedupStore != null) {
-            this.dedupStore.processed(eventToken);
+        if (claim != null) {
+            this.dedupStore.processed(eventToken, claim);
         }
         this.metrics.setReceived(issuer, deliveryMethod, SetOutcome.HANDLED);
         String transmitter = issuer;

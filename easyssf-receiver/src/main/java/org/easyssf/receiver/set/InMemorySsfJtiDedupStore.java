@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.easyssf.core.event.SsfEventToken;
@@ -26,6 +27,8 @@ public class InMemorySsfJtiDedupStore implements SsfJtiDedupStore {
     private Duration lease = Duration.ofSeconds(60);
 
     private Clock clock = Clock.systemUTC();
+
+    private final AtomicLong nextToken = new AtomicLong();
 
     public InMemorySsfJtiDedupStore(int capacity) {
         int maxEntries = Math.max(1, capacity);
@@ -60,18 +63,39 @@ public class InMemorySsfJtiDedupStore implements SsfJtiDedupStore {
         try {
             Known entry = this.entries.get(key);
             if (entry == null) {
-                this.entries.put(key, new Known(Claim.IN_PROGRESS, now));
-                return Claim.NEW;
+                return grant(key, now);
             }
-            if (entry.state == Claim.PROCESSED) {
-                return Claim.PROCESSED;
+            if (entry.state == State.PROCESSED) {
+                return Claim.processed();
             }
             if (!entry.since.plus(this.lease).isAfter(now)) {
-                // abandoned: taken over
-                this.entries.put(key, new Known(Claim.IN_PROGRESS, now));
-                return Claim.NEW;
+                // abandoned: taken over, with a token of its own
+                return grant(key, now);
             }
-            return Claim.IN_PROGRESS;
+            return Claim.inProgress();
+        }
+        finally {
+            this.lock.unlock();
+        }
+    }
+
+    private Claim grant(String key, Instant now) {
+        long token = this.nextToken.incrementAndGet();
+        this.entries.put(key, new Known(State.IN_PROGRESS, now, token));
+        return Claim.granted(token);
+    }
+
+    @Override
+    public void processed(SsfEventToken eventToken, Claim claim) {
+        SsfAssert.notNull(claim, "claim must not be null");
+        String key = SsfJtiDedupStore.key(eventToken);
+        this.lock.lock();
+        try {
+            Known entry = this.entries.get(key);
+            // the claim may have been evicted meanwhile: record the success anyway
+            if (entry == null || holds(entry, claim)) {
+                this.entries.put(key, new Known(State.PROCESSED, this.clock.instant(), claim.token()));
+            }
         }
         finally {
             this.lock.unlock();
@@ -79,25 +103,26 @@ public class InMemorySsfJtiDedupStore implements SsfJtiDedupStore {
     }
 
     @Override
-    public void processed(SsfEventToken eventToken) {
+    public void forget(SsfEventToken eventToken, Claim claim) {
+        SsfAssert.notNull(claim, "claim must not be null");
+        String key = SsfJtiDedupStore.key(eventToken);
         this.lock.lock();
         try {
-            this.entries.put(SsfJtiDedupStore.key(eventToken), new Known(Claim.PROCESSED, this.clock.instant()));
+            Known entry = this.entries.get(key);
+            if (entry != null && holds(entry, claim)) {
+                this.entries.remove(key);
+            }
         }
         finally {
             this.lock.unlock();
         }
     }
 
-    @Override
-    public void forget(SsfEventToken eventToken) {
-        this.lock.lock();
-        try {
-            this.entries.remove(SsfJtiDedupStore.key(eventToken));
-        }
-        finally {
-            this.lock.unlock();
-        }
+    /**
+     * Whether the entry is the claim given: in progress and not taken over since.
+     */
+    private static boolean holds(Known entry, Claim claim) {
+        return entry.state == State.IN_PROGRESS && entry.token == claim.token();
     }
 
     public int size() {
@@ -110,7 +135,7 @@ public class InMemorySsfJtiDedupStore implements SsfJtiDedupStore {
         }
     }
 
-    private record Known(Claim state, Instant since) {
+    private record Known(State state, Instant since, long token) {
     }
 
 }

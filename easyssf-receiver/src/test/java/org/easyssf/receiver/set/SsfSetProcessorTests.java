@@ -74,15 +74,15 @@ class SsfSetProcessorTests {
         SsfJtiDedupStore inProgress = new SsfJtiDedupStore() {
             @Override
             public Claim claim(org.easyssf.core.event.SsfEventToken eventToken) {
-                return Claim.IN_PROGRESS;
+                return Claim.inProgress();
             }
 
             @Override
-            public void processed(org.easyssf.core.event.SsfEventToken eventToken) {
+            public void processed(org.easyssf.core.event.SsfEventToken eventToken, Claim claim) {
             }
 
             @Override
-            public void forget(org.easyssf.core.event.SsfEventToken eventToken) {
+            public void forget(org.easyssf.core.event.SsfEventToken eventToken, Claim claim) {
             }
         };
         SsfSetProcessor processor = new SsfSetProcessor(this.verifier, inProgress, List.of(this.recordingHandler));
@@ -104,10 +104,11 @@ class SsfSetProcessorTests {
         SsfSetProcessor processor = new SsfSetProcessor(this.verifier, store, List.of(failingOnce));
         assertThatExceptionOfType(SsfEventHandlingException.class).isThrownBy(() -> processor.process("jti-1"));
         // forgotten: the redelivery is new, not in progress
-        assertThat(store.claim(this.verifier.verify("jti-1"))).isEqualTo(SsfJtiDedupStore.Claim.NEW);
-        store.forget(this.verifier.verify("jti-1"));
+        SsfJtiDedupStore.Claim claim = store.claim(this.verifier.verify("jti-1"));
+        assertThat(claim.isNew()).isTrue();
+        store.forget(this.verifier.verify("jti-1"), claim);
         assertThat(processor.process("jti-1")).isEqualTo(Outcome.HANDLED);
-        assertThat(store.claim(this.verifier.verify("jti-1"))).isEqualTo(SsfJtiDedupStore.Claim.PROCESSED);
+        assertThat(store.claim(this.verifier.verify("jti-1"))).isEqualTo(SsfJtiDedupStore.Claim.processed());
     }
 
     @Test
