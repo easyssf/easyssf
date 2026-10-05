@@ -6,6 +6,16 @@ The notable changes of every release. The section of a version is the text of it
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-06
+
+POLL delivery that survives restarts and runs on several instances: acknowledgements wait in a
+store, optionally in the database, long polling keeps a request outstanding, and a SET is claimed
+while its handlers run so that two instances never acknowledge a SET one of them failed on.
+The JDBC schema gained a column and a table; migration scripts and startup upgrades come with it.
+Handlers get typed access to CAEP and RISC events with `SsfCaepEventHandler` and `SsfRiscEventHandler`,
+and the documentation now says in plain words that processing is at least once, with `idempotencyKey()`
+as the key for a handler's side effects.
+
 ### Added
 
 - POLL delivery keeps the acknowledgements and error reports it owes the transmitter in an
@@ -118,6 +128,7 @@ Java library and as a Spring Boot 4.1 starter.
 - The framework-free modules are Java modules; every artifact is signed, carries a CycloneDX
   SBOM and a self-contained POM.
 
-[Unreleased]: https://github.com/easyssf/easyssf/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/easyssf/easyssf/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/easyssf/easyssf/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/easyssf/easyssf/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/easyssf/easyssf/releases/tag/v0.1.0
