@@ -25,7 +25,8 @@ The notable changes of every release. The section of a version is the text of it
   instance that receives it meanwhile neither handles nor acknowledges it (`SsfSetInProgressException`,
   metrics outcome `in_progress`), so a handler failure on the first instance is not masked. A claim
   older than the lease (`easyssf.receiver.dedup.lease`, 60 seconds) counts as abandoned and the SET is
-  handled again.
+  handled again. The claim carries a token that fences it: an instance whose handlers outlived the
+  lease can neither complete nor forget the claim of the instance that took the SET over.
 
 - `SsfEventToken.idempotencyKey()` and `SsfEventContext.idempotencyKey()`, the issuer and `jti` of a
   SET, as the key for the side effects of a handler: processing is at least once, which the
@@ -46,8 +47,9 @@ The notable changes of every release. The section of a version is the text of it
 
 ### Changed
 
-- `SsfJtiDedupStore` has `claim`, `processed` and `forget`; `seenBefore` is a deprecated default
-  method. The table `EASYSSF_PROCESSED_SET` gained the column `STATE`; existing tables need
+- `SsfJtiDedupStore` has `claim`, which returns a `Claim` with the `State` of the SET and the token of
+  the claim granted, and `processed` and `forget`, which take that claim; `seenBefore` is a deprecated
+  default method. The table `EASYSSF_PROCESSED_SET` gained the column `STATE`; existing tables need
   `ALTER TABLE EASYSSF_PROCESSED_SET ADD STATE VARCHAR(16) DEFAULT 'PROCESSED' NOT NULL` (the migration
   script `V0_3_0__dedup_state_and_poll_acks.sql`), applied on startup where tables may be created and
   named in the error otherwise.

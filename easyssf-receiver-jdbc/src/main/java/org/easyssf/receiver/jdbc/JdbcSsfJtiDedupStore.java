@@ -22,7 +22,10 @@ import org.easyssf.receiver.set.SsfJtiDedupStore;
  * The handlers' success turns the state into {@code PROCESSED}. {@code PROCESSED_AT} is
  * the time of the last state change, so an {@code IN_PROGRESS} row older than the lease
  * (60 seconds by default) counts as abandoned by a crashed instance and the next claim
- * takes it over.
+ * takes it over. That {@code PROCESSED_AT} is also the token of the claim: the success or
+ * failure of the handlers only changes the row while it still carries the token they were
+ * granted, so an instance that outlived the lease leaves the claim of the taker-over
+ * alone.
  *
  * <p>
  * SETs are forgotten after the retention time: the store deletes them when it is written
@@ -78,9 +81,13 @@ public class JdbcSsfJtiDedupStore implements SsfJtiDedupStore, JdbcSsfExpiringSt
         this.select = "SELECT STATE, PROCESSED_AT FROM " + this.table + " WHERE ISSUER = ? AND JTI = ?";
         this.takeOver = "UPDATE " + this.table + " SET PROCESSED_AT = ? WHERE ISSUER = ? AND JTI = ? AND STATE = '"
                 + IN_PROGRESS + "' AND PROCESSED_AT = ?";
+        // processed and forget are fenced by the claim's token, the PROCESSED_AT of the
+        // claim
         this.markProcessed = "UPDATE " + this.table + " SET STATE = '" + PROCESSED
-                + "', PROCESSED_AT = ? WHERE ISSUER = ? AND JTI = ?";
-        this.delete = "DELETE FROM " + this.table + " WHERE ISSUER = ? AND JTI = ?";
+                + "', PROCESSED_AT = ? WHERE ISSUER = ? AND JTI = ? AND STATE = '" + IN_PROGRESS
+                + "' AND PROCESSED_AT = ?";
+        this.delete = "DELETE FROM " + this.table + " WHERE ISSUER = ? AND JTI = ? AND STATE = '" + IN_PROGRESS
+                + "' AND PROCESSED_AT = ?";
         this.deleteExpired = "DELETE FROM " + this.table + " WHERE PROCESSED_AT < ?";
         requireStateColumn();
     }
@@ -128,50 +135,62 @@ public class JdbcSsfJtiDedupStore implements SsfJtiDedupStore, JdbcSsfExpiringSt
     public Claim claim(SsfEventToken eventToken) {
         Instant now = this.clock.instant();
         removeExpired(now);
+        long token = now.toEpochMilli();
         try {
-            this.jdbc.update(this.insert, eventToken.iss(), eventToken.jti(), IN_PROGRESS, now.toEpochMilli());
-            return Claim.NEW;
+            this.jdbc.update(this.insert, eventToken.iss(), eventToken.jti(), IN_PROGRESS, token);
+            return Claim.granted(token);
         }
         catch (SsfJdbcDuplicateKeyException ex) {
-            List<Row> rows = this.jdbc.query(this.select, (row) -> new Row(row.getString(1), row.getLong(2)),
-                    eventToken.iss(), eventToken.jti());
+            List<Row> rows = select(eventToken);
             if (rows.isEmpty()) {
                 // deleted in between: the redelivery will be claimed
-                return Claim.IN_PROGRESS;
+                return Claim.inProgress();
             }
             Row row = rows.get(0);
             if (PROCESSED.equals(row.state())) {
-                return Claim.PROCESSED;
+                return Claim.processed();
             }
             Instant since = Instant.ofEpochMilli(row.since());
             if (!since.plus(this.lease).isAfter(now)) {
-                // abandoned: take it over, unless another instance did just now
-                int taken = this.jdbc.update(this.takeOver, now.toEpochMilli(), eventToken.iss(), eventToken.jti(),
-                        row.since());
-                return (taken == 1) ? Claim.NEW : Claim.IN_PROGRESS;
+                // abandoned: take it over, unless another instance did just now. The new
+                // PROCESSED_AT is the token of the new claim; the old holder's token no
+                // longer matches, so it can neither complete nor forget this claim.
+                int taken = this.jdbc.update(this.takeOver, token, eventToken.iss(), eventToken.jti(), row.since());
+                return (taken == 1) ? Claim.granted(token) : Claim.inProgress();
             }
-            return Claim.IN_PROGRESS;
+            return Claim.inProgress();
         }
     }
 
     @Override
-    public void processed(SsfEventToken eventToken) {
+    public void processed(SsfEventToken eventToken, Claim claim) {
+        SsfAssert.notNull(claim, "claim must not be null");
         long now = this.clock.instant().toEpochMilli();
-        int updated = this.jdbc.update(this.markProcessed, now, eventToken.iss(), eventToken.jti());
-        if (updated == 0) {
-            // the claim was purged in between
+        int updated = this.jdbc.update(this.markProcessed, now, eventToken.iss(), eventToken.jti(), claim.token());
+        if (updated == 0 && select(eventToken).isEmpty()) {
+            // the claim was purged in between: record the success anyway. A duplicate
+            // means
+            // another instance claimed the SET since, which then owns it.
             try {
                 this.jdbc.update(this.insert, eventToken.iss(), eventToken.jti(), PROCESSED, now);
             }
             catch (SsfJdbcDuplicateKeyException ex) {
-                this.jdbc.update(this.markProcessed, now, eventToken.iss(), eventToken.jti());
+                // taken over meanwhile
             }
         }
+        // otherwise the claim was taken over after the lease: the SET belongs to the new
+        // holder
     }
 
     @Override
-    public void forget(SsfEventToken eventToken) {
-        this.jdbc.update(this.delete, eventToken.iss(), eventToken.jti());
+    public void forget(SsfEventToken eventToken, Claim claim) {
+        SsfAssert.notNull(claim, "claim must not be null");
+        this.jdbc.update(this.delete, eventToken.iss(), eventToken.jti(), claim.token());
+    }
+
+    private List<Row> select(SsfEventToken eventToken) {
+        return this.jdbc.query(this.select, (row) -> new Row(row.getString(1), row.getLong(2)), eventToken.iss(),
+                eventToken.jti());
     }
 
     @Override
