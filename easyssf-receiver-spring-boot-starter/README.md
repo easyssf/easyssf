@@ -315,12 +315,16 @@ the state is kept in its database instead, without further configuration:
 | `EASYSSF_REVOCATION` | `JdbcSsfTokenRevocationStore` | revoked sessions and subjects, per issuer, removed after `easyssf.receiver.resource-server.revocation-ttl` |
 | `EASYSSF_POLL_ACK` | `JdbcSsfPollAckStore` | acknowledgements and error reports a polling receiver owes its transmitter until a poll request carried them, forgotten after `easyssf.receiver.jdbc.ack-retention` (7 days) |
 
-- **Tables**: in an embedded database (H2, HSQLDB, Derby) the tables are created on startup. For any
-  other database create them with your migration tool, the statements are in
-  [`schema.sql`](../easyssf-receiver-jdbc/src/main/resources/org/easyssf/receiver/jdbc/schema.sql)
-  (`classpath:org/easyssf/receiver/jdbc/schema.sql`), or set
-  `easyssf.receiver.jdbc.initialize-schema=always`. If a table is missing the application fails on
-  startup and says so, rather than on the first event. The stores use plain SQL (`VARCHAR`,
+- **Tables**: in an embedded database (H2, HSQLDB, Derby) the tables are created on startup, and
+  columns a newer release added to an existing table as well. For any other database create them with
+  your migration tool: the
+  [`migration/`](../easyssf-receiver-jdbc/src/main/resources/org/easyssf/receiver/jdbc/migration)
+  scripts (`classpath:org/easyssf/receiver/jdbc/migration/`, one per release that changed the schema,
+  named for Flyway, plain SQL for Liquibase and others) keep an installation current from release to
+  release, [`schema.sql`](../easyssf-receiver-jdbc/src/main/resources/org/easyssf/receiver/jdbc/schema.sql)
+  is the current schema for a fresh one. Or set `easyssf.receiver.jdbc.initialize-schema=always` to have
+  the receiver create and upgrade the tables itself. If a table or a column is missing the application
+  fails on startup with the statements to run, rather than on the first event. The stores use plain SQL (`VARCHAR`,
   `BIGINT`, no vendor syntax; a result limit is applied by the JDBC driver) and are tested on H2,
   PostgreSQL and MySQL.
 - **Several instances**: a SET is claimed before its handlers run and marked processed afterwards. An
@@ -329,9 +333,9 @@ the state is kept in its database instead, without further configuration:
   an acknowledgement of the second. A claim older than `easyssf.receiver.dedup.lease` (60 seconds)
   counts as abandoned by a crashed instance and the SET is handled again, which is one more reason for
   handlers to be idempotent. Set the lease longer than your longest handler.
-- **Upgrading from 0.1.0 or 0.2.0**: the table `EASYSSF_PROCESSED_SET` gained the column `STATE`. The
-  store refuses to start without it and prints the statement:
-  `ALTER TABLE EASYSSF_PROCESSED_SET ADD STATE VARCHAR(16) DEFAULT 'PROCESSED' NOT NULL`.
+- **Upgrading from 0.1.0 or 0.2.0**: run `migration/V0_3_0__dedup_state_and_poll_acks.sql`, which adds
+  the column `STATE` to `EASYSSF_PROCESSED_SET` and creates `EASYSSF_POLL_ACK`; with
+  `initialize-schema` `embedded` or `always` the receiver does it on startup.
 - **Opting out**: `easyssf.receiver.jdbc.enabled=false` keeps the state in memory although the
   application has a database. Your own `SsfJtiDedupStore`, `SsfTokenRevocationStore` or
   `SsfPollAckStore` bean takes precedence in any case.

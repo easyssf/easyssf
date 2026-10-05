@@ -27,12 +27,18 @@ The notable changes of every release. The section of a version is the text of it
   older than the lease (`easyssf.receiver.dedup.lease`, 60 seconds) counts as abandoned and the SET is
   handled again.
 
+- Schema migration: `easyssf-receiver-jdbc` ships versioned migration scripts in
+  `org/easyssf/receiver/jdbc/migration/` (Flyway naming, plain SQL), and `JdbcSsfSchema.prepareTable`
+  adds the columns a release introduced to an existing table where it may create tables
+  (`initialize-schema` `embedded` or `always`); otherwise it names the statements to run.
+
 ### Changed
 
 - `SsfJtiDedupStore` has `claim`, `processed` and `forget`; `seenBefore` is a deprecated default
   method. The table `EASYSSF_PROCESSED_SET` gained the column `STATE`; existing tables need
-  `ALTER TABLE EASYSSF_PROCESSED_SET ADD STATE VARCHAR(16) DEFAULT 'PROCESSED' NOT NULL`, the store
-  says so on startup.
+  `ALTER TABLE EASYSSF_PROCESSED_SET ADD STATE VARCHAR(16) DEFAULT 'PROCESSED' NOT NULL` (the migration
+  script `V0_3_0__dedup_state_and_poll_acks.sql`), applied on startup where tables may be created and
+  named in the error otherwise.
 - The schema of `easyssf-receiver-jdbc` has a third table, `EASYSSF_POLL_ACK`; create it with the
   statements of `schema.sql` where the tables are not created on startup.
 - `SsfPoller` polls on a thread of its own instead of a scheduled executor, and the in-memory stores

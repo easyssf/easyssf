@@ -91,7 +91,8 @@ public class JdbcSsfJtiDedupStore implements SsfJtiDedupStore, JdbcSsfExpiringSt
             if (this.jdbc.tableExists(this.table)) {
                 throw new IllegalStateException("The table " + this.table + " of the easyssf receiver predates "
                         + "easyssf 0.3.0 and lacks the STATE column. Add it with: ALTER TABLE " + this.table
-                        + " ADD STATE VARCHAR(16) DEFAULT '" + PROCESSED + "' NOT NULL", ex);
+                        + " ADD STATE VARCHAR(16) DEFAULT '" + PROCESSED + "' NOT NULL, or run the migration "
+                        + "scripts in " + JdbcSsfSchema.MIGRATION_LOCATION, ex);
             }
             throw ex;
         }

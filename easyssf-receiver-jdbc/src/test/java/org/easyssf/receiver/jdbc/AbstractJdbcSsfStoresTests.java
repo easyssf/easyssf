@@ -86,6 +86,64 @@ abstract class AbstractJdbcSsfStoresTests {
         assertThat(statements).isEqualTo(expected.stream().map(AbstractJdbcSsfStoresTests::normalize).toList());
     }
 
+    @Test
+    void migrationScriptsLeadToTheCurrentSchema() throws Exception {
+        SsfJdbcOperations fresh = emptyDatabase();
+        for (String script : List.of("migration/V0_1_0__processed_sets_and_revocations.sql",
+                "migration/V0_3_0__dedup_state_and_poll_acks.sql")) {
+            statements(script).forEach(fresh::execute);
+        }
+        // every table has every column of this release: nothing to create or upgrade
+        JdbcSsfSchema.prepareTable(fresh, JdbcSsfSchema.processedSetTable(PREFIX),
+                JdbcSsfSchema.createProcessedSetTable(PREFIX), JdbcSsfSchema.processedSetUpgrades(PREFIX), false, null);
+        JdbcSsfSchema.prepareTable(fresh, JdbcSsfSchema.revocationTable(PREFIX),
+                JdbcSsfSchema.createRevocationTable(PREFIX), false, null);
+        JdbcSsfSchema.prepareTable(fresh, JdbcSsfSchema.pollAckTable(PREFIX), JdbcSsfSchema.createPollAckTable(PREFIX),
+                false, null);
+        assertThat(new JdbcSsfJtiDedupStore(fresh, PREFIX).claim(set("jti-1"))).isEqualTo(SsfJtiDedupStore.Claim.NEW);
+        JdbcSsfPollAckStore acks = new JdbcSsfPollAckStore(fresh, PREFIX);
+        acks.record(ISSUER, SsfPendingAck.ack("jti-1"));
+        assertThat(acks.size(ISSUER)).isEqualTo(1);
+        new JdbcSsfTokenRevocationStore(fresh, PREFIX, Duration.ofMinutes(1)).revokeSession(ISSUER, "s");
+    }
+
+    @Test
+    void missingColumnsAreAddedWhereTablesMayBeCreatedAndReportedOtherwise() {
+        this.jdbc.execute("DROP TABLE EASYSSF_PROCESSED_SET");
+        statements("migration/V0_1_0__processed_sets_and_revocations.sql").stream()
+            .filter((statement) -> statement.contains("EASYSSF_PROCESSED_SET"))
+            .forEach(this.jdbc::execute);
+        List<JdbcSsfSchema.Upgrade> upgrades = JdbcSsfSchema.processedSetUpgrades(PREFIX);
+
+        assertThatIllegalStateException()
+            .isThrownBy(() -> JdbcSsfSchema.prepareTable(this.jdbc, JdbcSsfSchema.processedSetTable(PREFIX),
+                    JdbcSsfSchema.createProcessedSetTable(PREFIX), upgrades, false, "or else"))
+            .withMessageContaining("[STATE]")
+            .withMessageContaining("ALTER TABLE EASYSSF_PROCESSED_SET ADD STATE")
+            .withMessageContaining("migration/")
+            .withMessageContaining("or else");
+
+        JdbcSsfSchema.prepareTable(this.jdbc, JdbcSsfSchema.processedSetTable(PREFIX),
+                JdbcSsfSchema.createProcessedSetTable(PREFIX), upgrades, true, null);
+        // repeatable
+        JdbcSsfSchema.prepareTable(this.jdbc, JdbcSsfSchema.processedSetTable(PREFIX),
+                JdbcSsfSchema.createProcessedSetTable(PREFIX), upgrades, true, null);
+        assertThat(dedupStore().claim(set("jti-1"))).isEqualTo(SsfJtiDedupStore.Claim.NEW);
+    }
+
+    private List<String> statements(String resource) {
+        try {
+            String script = new String(getClass().getResourceAsStream(resource).readAllBytes(), StandardCharsets.UTF_8);
+            return Arrays.stream(script.replaceAll("(?m)^--.*$", "").split(";"))
+                .map(AbstractJdbcSsfStoresTests::normalize)
+                .filter((statement) -> !statement.isEmpty())
+                .toList();
+        }
+        catch (java.io.IOException ex) {
+            throw new IllegalStateException(ex);
+        }
+    }
+
     private static String normalize(String statement) {
         return statement.replaceAll("\\s+", " ").trim();
     }

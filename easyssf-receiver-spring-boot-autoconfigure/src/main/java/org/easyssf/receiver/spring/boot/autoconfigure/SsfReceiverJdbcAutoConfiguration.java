@@ -64,7 +64,7 @@ public final class SsfReceiverJdbcAutoConfiguration {
         String table = JdbcSsfSchema.processedSetTable(tablePrefix);
         SsfJdbcOperations operations = new JdbcTemplateSsfJdbcOperations(jdbc);
         JdbcSsfSchema.prepareTable(operations, table, JdbcSsfSchema.createProcessedSetTable(tablePrefix),
-                createTables(properties, dataSource), SCHEMA_HINT);
+                JdbcSsfSchema.processedSetUpgrades(tablePrefix), createTables(properties, dataSource), SCHEMA_HINT);
         JdbcSsfJtiDedupStore store = new JdbcSsfJtiDedupStore(operations, tablePrefix);
         store.setRetention(properties.getDedup().getRetention());
         store.setLease(properties.getDedup().getLease());
