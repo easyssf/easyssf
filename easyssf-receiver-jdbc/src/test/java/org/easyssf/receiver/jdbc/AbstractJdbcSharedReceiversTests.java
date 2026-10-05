@@ -28,8 +28,8 @@ import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 
 /**
  * Several receivers (instances of one application) polling the same stream and sharing
- * the JDBC stores: a SET is handled once, and an acknowledgement one instance could not
- * deliver leaves with the next poll of another.
+ * the JDBC stores: a SET is handled by one of them and skipped by the others, and an
+ * acknowledgement one instance could not deliver leaves with the next poll of another.
  */
 abstract class AbstractJdbcSharedReceiversTests {
 

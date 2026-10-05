@@ -5,8 +5,13 @@ package org.easyssf.receiver.event;
  * {@link org.easyssf.receiver.set.SsfSetProcessor} is invoked for every SET.
  *
  * <p>
- * Handlers must be idempotent: a SET is delivered again if any handler failed, and
- * de-duplication does not survive a restart.
+ * A SET is handled at least once, not exactly once, so handlers must be idempotent. A SET
+ * is delivered again if any handler failed, and all handlers run again, possibly on
+ * another instance of the application; with a shared dedup store a SET is claimed while
+ * its handlers run and another instance leaves it alone meanwhile, but an instance that
+ * dies after a handler's side effects and before the success is recorded hands the SET to
+ * the next instance after a lease. Side effects outside the receiver's stores should be
+ * keyed by {@link SsfEventContext#idempotencyKey()}.
  */
 @FunctionalInterface
 public interface SsfEventHandler {

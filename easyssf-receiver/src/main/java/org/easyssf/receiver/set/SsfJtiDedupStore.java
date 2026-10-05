@@ -3,8 +3,11 @@ package org.easyssf.receiver.set;
 import org.easyssf.core.event.SsfEventToken;
 
 /**
- * Remembers which SETs were already processed, so that a SET delivered more than once is
- * handled only once. Implement it to back it with a shared or durable store.
+ * Remembers which SETs were processed, so that a redelivery of a handled SET is skipped
+ * and a SET another instance is handling is left alone. It does not make handling exactly
+ * once: an instance that dies after a handler ran and before {@link #processed} hands the
+ * SET to the next instance after the lease, which is why handlers are idempotent.
+ * Implement it to back it with a shared or durable store.
  *
  * <p>
  * A SET is {@link #claim claimed} before its handlers run and marked {@link #processed
@@ -68,11 +71,11 @@ public interface SsfJtiDedupStore {
     }
 
     /**
-     * The key identifying a SET. A {@code jti} is only unique per issuer (RFC 8417,
-     * section 2.2).
+     * The key identifying a SET, the same one handlers use for their side effects.
+     * @see SsfEventToken#idempotencyKey()
      */
     static String key(SsfEventToken eventToken) {
-        return eventToken.iss() + "::" + eventToken.jti();
+        return eventToken.idempotencyKey();
     }
 
 }

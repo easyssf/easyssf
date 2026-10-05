@@ -119,8 +119,11 @@ Things to know:
 
 **SCIM Events** (RFC 9967, see the [root README](../README.md#scim-events)): the deactivation and
 the deletion of a SCIM user usually mean the user may no longer be logged in. To end their local
-sessions, add the events to the user events. A `scim` subject is matched with the logged-in user by
-comparing attributes of the resource with claims: by default `externalId` and `id` (the `id`
+sessions, add the events to the user events. Which SCIM resource is which logged-in user is not
+something SCIM or OpenID Connect define: it is a decision of your deployment, about identifiers the
+SCIM service provider and the OpenID Provider happen to share, and the mapping below is where you
+state it. A `scim` subject is matched with the logged-in user by comparing attributes of the resource
+with claims: by default `externalId` and `id` (the `id`
 attribute, or the last segment of the `uri`) with `sub`, and `userName` with `preferred_username`. If
 your SCIM service provider and your OpenID Provider share other identifiers, configure the pairs; a
 multi-valued attribute such as `emails` matches if any of its values does, and values compared with
@@ -331,8 +334,10 @@ the state is kept in its database instead, without further configuration:
   instance that receives a SET another one is handling leaves it for the transmitter's redelivery,
   neither handling nor acknowledging it, so a handler failure on the first instance is not masked by
   an acknowledgement of the second. A claim older than `easyssf.receiver.dedup.lease` (60 seconds)
-  counts as abandoned by a crashed instance and the SET is handled again, which is one more reason for
-  handlers to be idempotent. Set the lease longer than your longest handler.
+  counts as abandoned by a crashed instance and the SET is handled again. The guarantee is therefore
+  at-least-once processing with concurrent deliveries suppressed, not exactly once: handlers stay
+  idempotent and key their side effects by `eventContext.idempotencyKey()`. Set the lease longer than
+  your longest handler.
 - **Upgrading from 0.1.0 or 0.2.0**: run `migration/V0_3_0__dedup_state_and_poll_acks.sql`, which adds
   the column `STATE` to `EASYSSF_PROCESSED_SET` and creates `EASYSSF_POLL_ACK`; with
   `initialize-schema` `embedded` or `always` the receiver does it on startup.

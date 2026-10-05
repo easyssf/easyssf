@@ -10,9 +10,11 @@ import org.easyssf.core.support.SsfAssert;
 import org.easyssf.receiver.set.SsfJtiDedupStore;
 
 /**
- * {@link SsfJtiDedupStore} that remembers processed SETs in a database table, so that a
- * SET is handled once even if it is delivered to several instances of an application or
- * again after a restart.
+ * {@link SsfJtiDedupStore} that remembers processed SETs in a database table shared by
+ * the instances of an application: a SET delivered to several of them or again after a
+ * restart is handled by one and skipped by the others, and a SET one instance is handling
+ * is left alone by the rest. Processing stays at least once, see
+ * {@link SsfJtiDedupStore}.
  *
  * <p>
  * A claim inserts the row with the state {@code IN_PROGRESS}: the primary key of the
