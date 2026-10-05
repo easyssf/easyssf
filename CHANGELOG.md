@@ -27,6 +27,9 @@ The notable changes of every release. The section of a version is the text of it
   older than the lease (`easyssf.receiver.dedup.lease`, 60 seconds) counts as abandoned and the SET is
   handled again.
 
+- `SsfEventToken.idempotencyKey()` and `SsfEventContext.idempotencyKey()`, the issuer and `jti` of a
+  SET, as the key for the side effects of a handler: processing is at least once, which the
+  documentation now says in those words.
 - Schema migration: `easyssf-receiver-jdbc` ships versioned migration scripts in
   `org/easyssf/receiver/jdbc/migration/` (Flyway naming, plain SQL), and `JdbcSsfSchema.prepareTable`
   adds the columns a release introduced to an existing table where it may create tables

@@ -35,6 +35,13 @@ class SsfEventContextTests {
     }
 
     @Test
+    void idempotencyKeyIsIssuerAndJti() {
+        SsfEventContext context = context(Map.of(SsfEventTypes.CAEP_SESSION_REVOKED, Map.of()), null);
+        assertThat(context.idempotencyKey()).isEqualTo("https://idp.example::jti-1");
+        assertThat(context.idempotencyKey()).isEqualTo(context.eventToken().idempotencyKey());
+    }
+
+    @Test
     void subjectIsTakenFromSubId() {
         SsfEventContext context = context(Map.of(SsfEventTypes.CAEP_SESSION_REVOKED, Map.of()), opaque("abc"));
         assertThat(context.subjectFor("CaepSessionRevoked").opaqueId()).isEqualTo("abc");

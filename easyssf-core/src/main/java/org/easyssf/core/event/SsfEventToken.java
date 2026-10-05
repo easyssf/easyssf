@@ -28,4 +28,15 @@ public record SsfEventToken(String jti, String iss, Instant iat, List<String> au
         claims = SsfCollections.copyOf(claims);
     }
 
+    /**
+     * The key that identifies this SET across deliveries: the issuer and the {@code jti},
+     * which is only unique per issuer (RFC 8417, section 2.2). A handler that has side
+     * effects outside the receiver's stores uses it to make them idempotent, because a
+     * SET may be handled more than once: after a handler failed, or on another instance
+     * after the one that handled it died before recording the success.
+     */
+    public String idempotencyKey() {
+        return this.iss + "::" + this.jti;
+    }
+
 }

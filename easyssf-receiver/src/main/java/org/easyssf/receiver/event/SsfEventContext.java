@@ -26,6 +26,15 @@ public final class SsfEventContext {
     }
 
     /**
+     * The key for making the side effects of a handler idempotent, the issuer and
+     * {@code jti} of the SET: a SET is handled at least once, not exactly once (see
+     * {@link SsfEventHandler}).
+     */
+    public String idempotencyKey() {
+        return this.eventToken.idempotencyKey();
+    }
+
+    /**
      * The event type URIs contained in the SET.
      */
     public Set<String> eventTypes() {
