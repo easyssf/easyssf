@@ -10,7 +10,7 @@ Events, the test support.
 <dependency>
     <groupId>org.easyssf</groupId>
     <artifactId>easyssf-receiver-spring-boot-starter</artifactId>
-    <version>0.4.0</version>
+    <version>0.5.0</version>
 </dependency>
 ```
 

@@ -6,6 +6,13 @@ The notable changes of every release. The section of a version is the text of it
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-06
+
+The first poll follows the registration of the stream at once: the registrar wakes the
+poller up, and a poller that starts before the stream is registered looks again after a
+second instead of waiting the full interval. New API for that: SsfStreamRegistrar.addListener,
+SsfPoller.wakeUp and setEndpointRetry.
+
 ### Added
 
 - `SsfStreamRegistrar.addListener` tells a listener when the stream is registered, and
@@ -156,7 +163,8 @@ Java library and as a Spring Boot 4.1 starter.
 - The framework-free modules are Java modules; every artifact is signed, carries a CycloneDX
   SBOM and a self-contained POM.
 
-[Unreleased]: https://github.com/easyssf/easyssf/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/easyssf/easyssf/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/easyssf/easyssf/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/easyssf/easyssf/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/easyssf/easyssf/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/easyssf/easyssf/compare/v0.1.0...v0.2.0
