@@ -6,6 +6,14 @@ The notable changes of every release. The section of a version is the text of it
 
 ## [Unreleased]
 
+### Changed
+
+- The column `PROCESSED_AT` of `EASYSSF_PROCESSED_SET` is now `STATE_CHANGED_AT`: since 0.3.0 it has
+  recorded the time of the claim as well as that of the completion, and it fences the claim. Existing
+  tables need `ALTER TABLE EASYSSF_PROCESSED_SET RENAME COLUMN PROCESSED_AT TO STATE_CHANGED_AT` (the
+  migration script `V0_4_0__state_changed_at.sql`; `RENAME COLUMN` works on H2, PostgreSQL and MySQL 8),
+  applied on startup where tables may be created and named in the error otherwise.
+
 ## [0.3.0] - 2026-10-06
 
 POLL delivery that survives restarts and runs on several instances: acknowledgements wait in a
