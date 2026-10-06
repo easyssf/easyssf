@@ -82,6 +82,10 @@ pins a released version. Consequences for a change here:
   constructor through `SsfCollections.copyOf` and nulls normalised to empty. Arguments are checked
   with `SsfAssert`. Factories are static `from(...)` (lenient, returns `null` or an empty value for
   input that does not fit) and `of(...)`.
+- **A javadoc comment belongs to a declaration.** One that an edit left between a method and its
+  own javadoc, or above a blank line, fails the `jdk` job of the CI (javac's `dangling-doc-comments`
+  lint, JDK 23 or newer, profile `dangling-doc-comments`); Java 21 builds do not notice. When you
+  insert a method, anchor on the javadoc above the neighbour, not on its signature.
 - **Protocol facts carry their source.** Javadoc and comments cite the specification and section
   (`SSF 1.0 8.1.4.1`, `RFC 9967, section 2.4`) and name the real-world deviation they tolerate
   (`// CAEP defines seconds since epoch, some transmitters send milliseconds`). Keep that habit;

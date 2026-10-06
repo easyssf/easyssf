@@ -428,6 +428,29 @@
             </build>
         </profile>
         <profile>
+            <!-- A javadoc comment that is attached to nothing, typically one that a later edit separated from
+                 its method, is an error. javac knows the lint from JDK 23 on, so the check runs where the build
+                 JDK is new enough: the "jdk" job of the CI, not the Java 21 jobs. See CONTRIBUTING.md. -->
+            <id>dangling-doc-comments</id>
+            <activation>
+                <jdk>[23,)</jdk>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <configuration>
+                            <compilerArgs>
+                                <arg>-Xlint:dangling-doc-comments</arg>
+                                <arg>-Werror</arg>
+                            </compilerArgs>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
             <!-- Builds the artifacts the way Maven Central requires them: sources and javadoc jars,
                  GPG signatures, and "deploy" publishes to the Central portal. See CONTRIBUTING.md. -->
             <id>release</id>
