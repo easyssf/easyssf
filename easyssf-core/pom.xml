@@ -13,6 +13,15 @@
 
     <properties>
         <automatic.module.name>org.easyssf.core</automatic.module.name>
+        <!-- the test packages, opened to JUnit when the IDE runs the tests (profile "ide" of the root POM) -->
+        <ide.test.add-opens>
+            --add-opens org.easyssf.core/org.easyssf.core=org.junit.platform.commons
+            --add-opens org.easyssf.core/org.easyssf.core.caep=org.junit.platform.commons
+            --add-opens org.easyssf.core/org.easyssf.core.event=org.junit.platform.commons
+            --add-opens org.easyssf.core/org.easyssf.core.metadata=org.junit.platform.commons
+            --add-opens org.easyssf.core/org.easyssf.core.risc=org.junit.platform.commons
+            --add-opens org.easyssf.core/org.easyssf.core.scim=org.junit.platform.commons
+        </ide.test.add-opens>
     </properties>
 
     <dependencies>

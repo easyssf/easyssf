@@ -18,6 +18,10 @@
         <database.groups/>
         <database.excludedGroups>database</database.excludedGroups>
         <automatic.module.name>org.easyssf.receiver.jdbc</automatic.module.name>
+        <!-- the test packages, opened to JUnit when the IDE runs the tests (profile "ide" of the root POM) -->
+        <ide.test.add-opens>
+            --add-opens org.easyssf.receiver.jdbc/org.easyssf.receiver.jdbc=org.junit.platform.commons
+        </ide.test.add-opens>
     </properties>
 
     <dependencies>

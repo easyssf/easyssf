@@ -58,6 +58,8 @@
 
     <properties>
         <java.version>21</java.version>
+        <!-- what the "ide" profile below opens for JUnit; the explicit modules list their test packages -->
+        <ide.test.add-opens></ide.test.add-opens>
         <maven.compiler.release>${java.version}</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
@@ -400,6 +402,31 @@
     </build>
 
     <profiles>
+        <profile>
+            <!-- Active in IntelliJ IDEA only, which sets idea.version: the IDE runs the tests of an explicit
+                 module with JUnit on the module path, where surefire keeps JUnit on the class path, so the IDE
+                 needs the test packages opened to the JUnit module. It copies surefire's argLine into its
+                 JUnit run configurations; each explicit module lists its test packages in ide.test.add-opens.
+                 Under Maven the profile is off and the option, whose target module is unknown there, is not
+                 passed. See CONTRIBUTING.md. -->
+            <id>ide</id>
+            <activation>
+                <property>
+                    <name>idea.version</name>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <argLine>${ide.test.add-opens}</argLine>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <profile>
             <!-- Builds the artifacts the way Maven Central requires them: sources and javadoc jars,
                  GPG signatures, and "deploy" publishes to the Central portal. See CONTRIBUTING.md. -->

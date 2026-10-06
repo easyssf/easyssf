@@ -40,7 +40,14 @@ to submit the change under the project's license. The CI checks it for every com
   manifest entry, which every module sets through the `automatic.module.name` property. A new
   package in an explicit module needs an `exports` line. Surefire runs the tests of the explicit
   modules on the module path; `easyssf-receiver-jdbc` adds `java.naming` for test compilation
-  because H2's data source implements a `javax.naming` interface.
+  because H2's data source implements a `javax.naming` interface. Surefire keeps JUnit on the class
+  path and opens the test packages to it; IntelliJ IDEA puts JUnit on the module path instead, so
+  the profile `ide` of the root POM, active only in the IDE (it activates on the `idea.version`
+  property the IDE sets), hands surefire an `argLine` that opens every test package of an explicit
+  module to `org.junit.platform.commons`, which the IDE copies into its JUnit run configurations.
+  The packages are listed in the property `ide.test.add-opens` of each explicit module; a new test
+  package there needs a line, or the IDE fails with "does not opens ... to module
+  org.junit.platform.commons" while Maven passes.
 - **Every module ships an SBOM**, `target/bom.json` in CycloneDX format, attached to the artifact with
   the classifier `cyclonedx`. It lists the compile and runtime dependencies.
 - **`.mvn/jvm.config`** silences the schema validator inside the CycloneDX plugin, which warns about
