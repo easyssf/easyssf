@@ -128,7 +128,10 @@ directly, and tags are not covered by the ruleset. [`etc/release.sh`](etc/releas
    request with the release notes in its description. The release pull request is, like Dependabot's,
    the exception to the rule that a pull request refers to an issue. **Merge it with a merge commit or
    a rebase, not a squash**: the commit `Release X.Y.Z` has to reach `main` as it is, because the tag
-   goes on it.
+   goes on it. With `--dry-run` the step stops after the two commits; running it again pushes and
+   opens the pull request, and it does the same after a push or `gh` call that failed. The two
+   commits travel in one pull request so that `main` is at a snapshot version before and after the
+   merge, with the released version on exactly one commit in between.
 3. `etc/release.sh release`, on `main` after the merge, finds the commit `Release X.Y.Z`, checks its
    POM version and changelog section, creates the signed tag `vX.Y.Z` on it and pushes the tag, then
    watches the release workflow, which checks that the tag matches the POM version, runs the tests,

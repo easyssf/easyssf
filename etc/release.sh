@@ -9,7 +9,9 @@
 #   etc/release.sh propose [0.4.0] [--dry-run]  on that branch: commit "Release 0.3.0", then set the next development version
 #                                         (0.4.0-SNAPSHOT, by default the next minor) and commit "Start 0.4.0", push
 #                                         the branch and open the pull request. Merge it with a merge commit or a
-#                                         rebase, not a squash: the release commit has to reach main as it is
+#                                         rebase, not a squash: the release commit has to reach main as it is.
+#                                         --dry-run stops after the commits; running propose again pushes and opens
+#                                         the pull request, as it does after a push or pull request that failed
 #   etc/release.sh release [0.3.0]        on main after the merge: create the signed tag v0.3.0 on the commit
 #                                         "Release 0.3.0" and push the tag, which starts the release workflow
 #
@@ -111,29 +113,47 @@ propose() {
   local branch; branch=$(git branch --show-current)
   [[ "$branch" == release/* ]] || fail "run this on the branch 'prepare' created (currently on $branch)"
   local version=${branch#release/}
-  [ "$(version_of_pom)" = "$version" ] || fail "the POMs are at $(version_of_pom), the branch says $version"
+  local pom_version; pom_version=$(version_of_pom)
   grep -q "^## \[$version\] - " CHANGELOG.md || fail "CHANGELOG.md has no section for $version"
-  [ -n "$(git status --porcelain --untracked-files=no)" ] || fail "nothing to commit; was 'prepare' run?"
-  next=${next:-$(next_minor "$version")}
-  semver "$next"
-
   local notes; notes=$(release_notes "$version")
   [ -n "$notes" ] || fail "the CHANGELOG section of $version is empty"
-  echo "$notes" | head -3 | grep -q '[a-z]' || echo "warning: the section of $version has no lead paragraph before its first heading"
 
-  git commit -q -s -am "Release $version"
-  ./mvnw -q versions:set -DnewVersion="$next-SNAPSHOT" -DgenerateBackupPoms=false
-  git commit -q -s -am "Start $next"
-  echo "committed on $branch:"
-  git log --oneline -2 | sed 's/^/  /'
+  if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+    # the state 'prepare' left: commit the release and the next development version
+    [ "$pom_version" = "$version" ] || fail "the POMs are at $pom_version, the branch says $version"
+    next=${next:-$(next_minor "$version")}
+    semver "$next"
+    echo "$notes" | head -3 | grep -q '[a-z]' || echo "warning: the section of $version has no lead paragraph before its first heading"
+    git commit -q -s -am "Release $version"
+    ./mvnw -q versions:set -DnewVersion="$next-SNAPSHOT" -DgenerateBackupPoms=false
+    git commit -q -s -am "Start $next"
+    echo "committed on $branch:"
+    git log --oneline -2 | sed 's/^/  /'
+  else
+    # committed already, by a dry run or a run whose push or pull request failed: pick up from there
+    [ "$(git log -1 --format=%s HEAD~1)" = "Release $version" ] \
+      || fail "nothing to commit and the commit before HEAD is not 'Release $version'; was 'prepare' run?"
+    local started; started=$(git log -1 --format=%s HEAD)
+    [[ "$started" == "Start "* && "$pom_version" == "${started#Start }-SNAPSHOT" ]] \
+      || fail "HEAD is '$started' but the POMs are at $pom_version; expected 'Start X.Y.Z' and X.Y.Z-SNAPSHOT"
+    [ -z "$next" ] || [ "$next" = "${started#Start }" ] || fail "the branch already starts ${started#Start }, not $next"
+    next=${started#Start }
+    echo "already committed on $branch:"
+    git log --oneline -2 | sed 's/^/  /'
+  fi
   if [ "$dry_run" = "--dry-run" ]; then
-    echo "dry run: not pushing, not opening the pull request"
+    echo "dry run: not pushing, not opening the pull request; run 'propose' again to do so"
     return
   fi
   git push -u origin "$branch"
-  local body
-  body=$(printf 'Release %s, then %s-SNAPSHOT.\n\n**Merge with a merge commit or a rebase, not a squash**: the commit "Release %s" has to reach `main` unchanged, `etc/release.sh release` tags it there.\n\nRelease notes, from CHANGELOG.md:\n\n%s' "$version" "$next" "$version" "$notes")
-  gh pr create --base main --head "$branch" --title "Release $version" --body "$body"
+  local existing; existing=$(gh pr list --head "$branch" --base main --state open --json url --jq '.[0].url // empty')
+  if [ -n "$existing" ]; then
+    echo "the pull request exists already: $existing"
+  else
+    local body
+    body=$(printf 'Release %s, then %s-SNAPSHOT.\n\n**Merge with a merge commit or a rebase, not a squash**: the commit "Release %s" has to reach `main` unchanged, `etc/release.sh release` tags it there.\n\nRelease notes, from CHANGELOG.md:\n\n%s' "$version" "$next" "$version" "$notes")
+    gh pr create --base main --head "$branch" --title "Release $version" --body "$body"
+  fi
   echo
   echo "after the merge, on main: etc/release.sh release $version"
 }
@@ -167,8 +187,9 @@ release() {
 }
 
 release_notes() {
+  # the section without its heading and the link definitions, trimmed of blank lines at both ends
   awk -v v="$1" '/^## \[/ { in_section = ($0 ~ "^## \\[" v "\\]") ; next } in_section && !/^\[/ { print }' CHANGELOG.md \
-    | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}'
+    | sed -e '/./,$!d' -e :a -e '/^\n*$/{$d;N;ba' -e '}'
 }
 
 case "${1:-}" in

@@ -1,6 +1,8 @@
 # Publishes a release to Maven Central and creates the GitHub release. Triggered by pushing a tag
 # "v<version>" whose version matches the POM, see "Releasing" in CONTRIBUTING.md.
 name: Release
+# a tag push carries no commit for GitHub to title the run with, so name it by the tag
+run-name: Release ${{ github.ref_name }}
 
 on:
   push:
