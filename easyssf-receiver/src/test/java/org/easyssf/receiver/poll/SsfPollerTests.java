@@ -228,6 +228,30 @@ class SsfPollerTests {
     }
 
     @Test
+    void wakeUpEndsThePauseAndPollsAtOnce() {
+        this.poller.setInterval(Duration.ofHours(1));
+        this.poller.start();
+        try {
+            await().atMost(Duration.ofSeconds(5)).until(() -> transmitter.pollRequests() == 1);
+            String jti = queue("session-1");
+            await().during(Duration.ofMillis(300)).untilAsserted(() -> assertThat(this.handled).isEmpty());
+            this.poller.wakeUp();
+            await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(this.handled).containsExactly(jti));
+        }
+        finally {
+            this.poller.stop();
+        }
+    }
+
+    @Test
+    void wakeUpDoesNothingWhileThePollerIsNotRunning() {
+        queue("session-1");
+        this.poller.wakeUp();
+        await().during(Duration.ofMillis(300)).until(() -> transmitter.pollRequests() == 0);
+        assertThat(this.handled).isEmpty();
+    }
+
+    @Test
     void reportsFailedPollRequest() {
         SsfPoller unauthenticated = poller(() -> URI.create(transmitter.pollUri()), "wrong-token");
         assertThatIllegalStateException().isThrownBy(unauthenticated::pollNow).withMessageContaining("401");

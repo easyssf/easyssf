@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 
@@ -52,7 +53,9 @@ import com.nimbusds.jose.util.JSONObjectUtils;
  * {@code SsfStreamRegistrar} is still registering the stream when the poller starts, the
  * poller looks again every {@link #setEndpointRetry(Duration) endpoint retry} (one
  * second) rather than waiting the interval: not knowing the endpoint is a condition of
- * the startup, not a request of the transmitter to slow down.
+ * the startup, not a request of the transmitter to slow down. {@link #wakeUp()} ends the
+ * pause between two polls altogether; {@code SsfTransmitter} calls it when the stream is
+ * registered, so that the first poll follows the registration at once.
  */
 public class SsfPoller {
 
@@ -125,6 +128,13 @@ public class SsfPoller {
 
     /** start() and stop() are idempotent and safe to call from any thread */
     private final ReentrantLock lifecycle = new ReentrantLock();
+
+    private final ReentrantLock pausing = new ReentrantLock();
+
+    private final Condition wokenUp = this.pausing.newCondition();
+
+    /** only read and written while holding {@code pausing}, hence not volatile */
+    private boolean wakeUpRequested;
 
     /**
      * @param httpClient used to call the transmitter
@@ -324,6 +334,24 @@ public class SsfPoller {
     }
 
     /**
+     * Ends the pause between two polls, so that the next poll runs now, on the poller's
+     * thread and with its error handling. Does nothing while the poller is not running;
+     * {@link #pollNow()} polls on the caller's thread regardless.
+     */
+    public void wakeUp() {
+        this.pausing.lock();
+        try {
+            if (this.thread != null) {
+                this.wakeUpRequested = true;
+                this.wokenUp.signalAll();
+            }
+        }
+        finally {
+            this.pausing.unlock();
+        }
+    }
+
+    /**
      * @return when the transmitter was last polled, {@code null} if it was not polled yet
      */
     public Instant getLastPollAt() {
@@ -365,6 +393,7 @@ public class SsfPoller {
         try {
             Thread.sleep(this.initialDelay);
             while (this.running) {
+                clearWakeUp();
                 Duration pause = this.interval;
                 long started = System.nanoTime();
                 try {
@@ -390,12 +419,42 @@ public class SsfPoller {
                     logger.debug("Cause of the failed poll", ex);
                 }
                 if (this.running && pause.isPositive()) {
-                    Thread.sleep(pause);
+                    pause(pause);
                 }
             }
         }
         catch (InterruptedException ex) {
             // stop() ends the thread
+        }
+    }
+
+    /**
+     * Waits the pause, unless {@link #wakeUp()} ends it earlier.
+     */
+    private void pause(Duration pause) throws InterruptedException {
+        long nanos = pause.toNanos();
+        this.pausing.lock();
+        try {
+            while (!this.wakeUpRequested && nanos > 0 && this.running) {
+                nanos = this.wokenUp.awaitNanos(nanos);
+            }
+        }
+        finally {
+            this.pausing.unlock();
+        }
+    }
+
+    /**
+     * A wake-up during a poll is not kept: a registration that completes meanwhile is
+     * picked up by the endpoint retry.
+     */
+    private void clearWakeUp() {
+        this.pausing.lock();
+        try {
+            this.wakeUpRequested = false;
+        }
+        finally {
+            this.pausing.unlock();
         }
     }
 

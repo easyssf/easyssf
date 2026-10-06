@@ -6,6 +6,13 @@ The notable changes of every release. The section of a version is the text of it
 
 ## [Unreleased]
 
+### Added
+
+- `SsfStreamRegistrar.addListener` tells a listener when the stream is registered, and
+  `SsfPoller.wakeUp()` ends the pause between two polls. `SsfTransmitter` wires the two, so the first
+  poll follows the registration of the stream at once; the Spring Boot starter and the Quarkus extension
+  build their transmitters through it.
+
 ### Fixed
 
 - `SsfPoller` looks again after one second (`setEndpointRetry`) while the poll endpoint of the stream

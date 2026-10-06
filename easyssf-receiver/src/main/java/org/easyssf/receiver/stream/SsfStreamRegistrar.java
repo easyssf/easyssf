@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.easyssf.core.SsfDeliveryMethod;
 import org.easyssf.core.event.SsfEventTypes;
@@ -24,6 +25,11 @@ import org.slf4j.LoggerFactory;
  * Either looks up a stream that was created at the transmitter by its identifier, or
  * manages the stream itself: it reuses the stream the receiver already has at the
  * transmitter, brings it in line with the desired configuration, or creates it.
+ *
+ * <p>
+ * {@link #addListener Listeners} learn when the stream is registered;
+ * {@code SsfTransmitter} uses that to have the poller fetch right away instead of an
+ * interval later.
  */
 public class SsfStreamRegistrar {
 
@@ -48,6 +54,23 @@ public class SsfStreamRegistrar {
     private volatile State state = State.NOT_STARTED;
 
     private volatile String lastError;
+
+    private final List<Listener> listeners = new CopyOnWriteArrayList<>();
+
+    /**
+     * Told when the stream was looked up or registered.
+     */
+    @FunctionalInterface
+    public interface Listener {
+
+        /**
+         * The stream is registered: its configuration is known and the
+         * {@code SsfReceiverStream} is set.
+         * @param stream the stream as the transmitter has it
+         */
+        void streamRegistered(SsfStreamConfiguration stream);
+
+    }
 
     /**
      * Where the registration stands.
@@ -111,6 +134,16 @@ public class SsfStreamRegistrar {
      */
     public void setDeleteOnShutdown(boolean deleteOnShutdown) {
         this.deleteOnShutdown = deleteOnShutdown;
+    }
+
+    /**
+     * Adds a listener that is told whenever {@link #register()} succeeded, on the thread
+     * that registered the stream. A listener that throws is logged and does not keep the
+     * stream from being used.
+     */
+    public void addListener(Listener listener) {
+        SsfAssert.notNull(listener, "listener must not be null");
+        this.listeners.add(listener);
     }
 
     public void setInitialRetryDelay(Duration initialRetryDelay) {
@@ -248,6 +281,15 @@ public class SsfStreamRegistrar {
                 + stream.audience() + ")");
         this.lastError = null;
         this.state = State.REGISTERED;
+        for (Listener listener : this.listeners) {
+            try {
+                listener.streamRegistered(stream);
+            }
+            catch (RuntimeException ex) {
+                logger.warn("A listener failed on the registration of SSF stream " + stream.streamId() + ": " + ex);
+                logger.debug("Cause of the failed listener", ex);
+            }
+        }
         return stream;
     }
 

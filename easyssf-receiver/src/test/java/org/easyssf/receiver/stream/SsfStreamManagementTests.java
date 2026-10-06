@@ -2,6 +2,7 @@ package org.easyssf.receiver.stream;
 
 import java.net.URI;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -179,6 +180,19 @@ class SsfStreamManagementTests {
         assertThat(this.receiverStream.getStreamId()).isEqualTo(stream.streamId());
         assertThat(this.receiverStream.getAudience())
             .containsExactly(TestTransmitter.CLIENT_ID + "/" + stream.streamId());
+    }
+
+    @Test
+    void registrarTellsItsListenersOnceTheStreamIsRegistered() {
+        List<SsfStreamConfiguration> registered = new ArrayList<>();
+        SsfStreamRegistrar registrar = registrar(SsfStreamConfiguration.poll(List.of("CaepSessionRevoked"), null));
+        registrar.addListener((stream) -> {
+            throw new IllegalStateException("a failing listener does not keep the others from being told");
+        });
+        registrar.addListener(registered::add);
+        SsfStreamConfiguration stream = registrar.register();
+        assertThat(registered).containsExactly(stream);
+        assertThat(this.receiverStream.getStreamId()).isEqualTo(stream.streamId());
     }
 
     @Test
