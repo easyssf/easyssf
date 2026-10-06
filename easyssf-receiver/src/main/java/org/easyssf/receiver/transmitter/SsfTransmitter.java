@@ -57,6 +57,10 @@ public final class SsfTransmitter {
         this.poller = builder.poller;
         this.autoStartPolling = builder.autoStartPolling;
         this.pushAuthorizationHeader = builder.pushAuthorizationHeader;
+        if (this.streamRegistrar != null && this.poller != null) {
+            // the first poll right after the stream is registered, not an interval later
+            this.streamRegistrar.addListener((stream) -> this.poller.wakeUp());
+        }
     }
 
     /**
