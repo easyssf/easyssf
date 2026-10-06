@@ -6,7 +6,7 @@
 
     <groupId>org.easyssf</groupId>
     <artifactId>easyssf-parent</artifactId>
-    <version>0.5.0-SNAPSHOT</version>
+    <version>0.5.0</version>
     <packaging>pom</packaging>
     <name>easyssf</name>
     <description>Building blocks for the OpenID Shared Signals Framework (SSF)</description>
@@ -67,7 +67,7 @@
              the newest JDK: -Dbytebuddy.experimental=true -->
         <bytebuddy.experimental>false</bytebuddy.experimental>
         <!-- reproducible builds: the timestamp of the files in the jars, updated for every release -->
-        <project.build.outputTimestamp>2026-10-06T06:35:30Z</project.build.outputTimestamp>
+        <project.build.outputTimestamp>2026-10-06T08:24:05Z</project.build.outputTimestamp>
 
         <!-- All modules build against the versions of the Spring Boot BOM, imported below.
              The plain modules (easyssf-core, easyssf-receiver) do not depend on Spring:
