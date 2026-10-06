@@ -207,6 +207,8 @@ easyssf:
   agreed with the transmitter (30 seconds by default); the request waits that long plus a margin. A
   transmitter that answers an empty long poll at once is polled every `poll.interval` nevertheless.
   Whether Keycloak holds poll requests has not been verified; its default remains short polling.
+  Until the stream is registered and its poll endpoint known, the poller looks again every second
+  rather than waiting `poll.interval`, so the first poll follows the registration closely.
   With long polling on, the poller calls the transmitter with the JDK HTTP client even if the
   application has a `RestClient`, because the `RestClient` has no timeout per request
   (`SsfTransmitterFactory.pollHttpClient`); a poller bean of your own, built with

@@ -6,6 +6,12 @@ The notable changes of every release. The section of a version is the text of it
 
 ## [Unreleased]
 
+### Fixed
+
+- `SsfPoller` looks again after one second (`setEndpointRetry`) while the poll endpoint of the stream
+  is not known yet, instead of waiting the full interval: an application whose stream was still being
+  registered when the poller started polled for the first time up to an interval later.
+
 ## [0.4.0] - 2026-10-06
 
 One schema change: the column PROCESSED_AT of EASYSSF_PROCESSED_SET becomes
