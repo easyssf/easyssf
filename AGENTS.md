@@ -97,8 +97,9 @@ pins a released version. Consequences for a change here:
 - **Handlers are idempotent** and a SET that any handler fails on is delivered again. State that
   must survive a restart belongs in a store interface with an in-memory and a JDBC implementation.
 - **Java modules.** `core`, `test`, `receiver` and `receiver-jdbc` have a `module-info.java`; a new
-  package needs an `exports` line or the dependants do not compile. Micrometer stays
-  `requires static`.
+  package needs an `exports` line or the dependants do not compile, and a new test package needs
+  an `--add-opens` line in the module's `ide.test.add-opens` property or the IDE cannot run its
+  tests (Maven can, see CONTRIBUTING.md). Micrometer stays `requires static`.
 - **Logging** is SLF4J with string concatenation in the receiver (the messages are built once per
   event) and named by the event alias, e.g. `CaepSessionRevoked: terminated 2 session(s) of ...`.
 - No Lombok, no reflection-based mapping, no new runtime dependencies in `core` and `receiver`

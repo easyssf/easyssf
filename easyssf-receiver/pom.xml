@@ -13,6 +13,21 @@
 
     <properties>
         <automatic.module.name>org.easyssf.receiver</automatic.module.name>
+        <!-- the test packages, opened to JUnit when the IDE runs the tests (profile "ide" of the root POM) -->
+        <ide.test.add-opens>
+            --add-opens org.easyssf.receiver/org.easyssf.receiver.caep=org.junit.platform.commons
+            --add-opens org.easyssf.receiver/org.easyssf.receiver.event=org.junit.platform.commons
+            --add-opens org.easyssf.receiver/org.easyssf.receiver.http=org.junit.platform.commons
+            --add-opens org.easyssf.receiver/org.easyssf.receiver.poll=org.junit.platform.commons
+            --add-opens org.easyssf.receiver/org.easyssf.receiver.push=org.junit.platform.commons
+            --add-opens org.easyssf.receiver/org.easyssf.receiver.revocation=org.junit.platform.commons
+            --add-opens org.easyssf.receiver/org.easyssf.receiver.risc=org.junit.platform.commons
+            --add-opens org.easyssf.receiver/org.easyssf.receiver.scim=org.junit.platform.commons
+            --add-opens org.easyssf.receiver/org.easyssf.receiver.session=org.junit.platform.commons
+            --add-opens org.easyssf.receiver/org.easyssf.receiver.set=org.junit.platform.commons
+            --add-opens org.easyssf.receiver/org.easyssf.receiver.stream=org.junit.platform.commons
+            --add-opens org.easyssf.receiver/org.easyssf.receiver.transmitter=org.junit.platform.commons
+        </ide.test.add-opens>
     </properties>
 
     <dependencies>
