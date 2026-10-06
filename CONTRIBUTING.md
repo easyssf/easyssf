@@ -91,6 +91,11 @@ GitHub Actions, see [`.github/workflows`](.github/workflows):
      and on the newest JDK as a job that does not fail the build; it passes
      `-Dbytebuddy.experimental=true` in case Mockito's Byte Buddy does not know the class file
      version yet), and `database` (the stores of `easyssf-receiver-jdbc` on PostgreSQL and MySQL).
+     The `jdk` job is also where a javadoc comment attached to nothing fails the build: the profile
+     `dangling-doc-comments` of the root POM turns on javac's lint of that name with `-Werror`
+     wherever the build JDK is 23 or newer, which knows the lint; Java 21 does not. To run the check
+     locally, build with such a JDK, for example `JAVA_HOME=~/.sdkman/candidates/java/25.0.2-tem
+     ./mvnw -o -DskipTests test-compile`.
   4. `status` is green when every job that had to run succeeded; skipped jobs count as green. It is
      the one check to require in the branch protection of `main`, the others come and go with the
      change.
