@@ -90,7 +90,7 @@ abstract class AbstractJdbcSsfStoresTests {
     void migrationScriptsLeadToTheCurrentSchema() throws Exception {
         SsfJdbcOperations fresh = emptyDatabase();
         for (String script : List.of("migration/V0_1_0__processed_sets_and_revocations.sql",
-                "migration/V0_3_0__dedup_state_and_poll_acks.sql")) {
+                "migration/V0_3_0__dedup_state_and_poll_acks.sql", "migration/V0_4_0__state_changed_at.sql")) {
             statements(script).forEach(fresh::execute);
         }
         // every table has every column of this release: nothing to create or upgrade
@@ -118,8 +118,9 @@ abstract class AbstractJdbcSsfStoresTests {
         assertThatIllegalStateException()
             .isThrownBy(() -> JdbcSsfSchema.prepareTable(this.jdbc, JdbcSsfSchema.processedSetTable(PREFIX),
                     JdbcSsfSchema.createProcessedSetTable(PREFIX), upgrades, false, "or else"))
-            .withMessageContaining("[STATE]")
+            .withMessageContaining("[STATE, STATE_CHANGED_AT]")
             .withMessageContaining("ALTER TABLE EASYSSF_PROCESSED_SET ADD STATE")
+            .withMessageContaining("ALTER TABLE EASYSSF_PROCESSED_SET RENAME COLUMN PROCESSED_AT TO STATE_CHANGED_AT")
             .withMessageContaining("migration/")
             .withMessageContaining("or else");
 
@@ -129,6 +130,34 @@ abstract class AbstractJdbcSsfStoresTests {
         JdbcSsfSchema.prepareTable(this.jdbc, JdbcSsfSchema.processedSetTable(PREFIX),
                 JdbcSsfSchema.createProcessedSetTable(PREFIX), upgrades, true, null);
         assertThat(dedupStore().claim(set("jti-1")).isNew()).isTrue();
+        // the index moved with the column: the retention purge still uses it
+        assertThat(this.jdbc.query("SELECT STATE_CHANGED_AT FROM EASYSSF_PROCESSED_SET", (row) -> row.getLong(1)))
+            .hasSize(1);
+    }
+
+    @Test
+    void tableOf0dot3dot0IsUpgradedByRenamingTheColumn() {
+        this.jdbc.execute("DROP TABLE EASYSSF_PROCESSED_SET");
+        for (String script : List.of("migration/V0_1_0__processed_sets_and_revocations.sql",
+                "migration/V0_3_0__dedup_state_and_poll_acks.sql")) {
+            statements(script).stream()
+                .filter((statement) -> statement.contains("EASYSSF_PROCESSED_SET"))
+                .forEach(this.jdbc::execute);
+        }
+        // a row of the old release keeps its timestamp under the new name (and within the
+        // retention)
+        long processedAt = NOW.minusSeconds(60).toEpochMilli();
+        this.jdbc.update("INSERT INTO EASYSSF_PROCESSED_SET (ISSUER, JTI, STATE, PROCESSED_AT) VALUES (?, ?, ?, ?)",
+                ISSUER, "old", "PROCESSED", processedAt);
+        assertThatIllegalStateException().isThrownBy(() -> new JdbcSsfJtiDedupStore(this.jdbc, PREFIX))
+            .withMessageContaining("[STATE_CHANGED_AT]")
+            .withMessageContaining("RENAME COLUMN PROCESSED_AT TO STATE_CHANGED_AT");
+        JdbcSsfSchema.prepareTable(this.jdbc, JdbcSsfSchema.processedSetTable(PREFIX),
+                JdbcSsfSchema.createProcessedSetTable(PREFIX), JdbcSsfSchema.processedSetUpgrades(PREFIX), true, null);
+        assertThat(this.jdbc.query("SELECT STATE_CHANGED_AT FROM EASYSSF_PROCESSED_SET WHERE JTI = ?",
+                (row) -> row.getLong(1), "old"))
+            .containsExactly(processedAt);
+        assertThat(dedupStore().claim(set("old"))).isEqualTo(SsfJtiDedupStore.Claim.processed());
     }
 
     private List<String> statements(String resource) {
@@ -262,14 +291,19 @@ abstract class AbstractJdbcSsfStoresTests {
     }
 
     @Test
-    void tableWithoutTheStateColumnIsRejectedWithTheMigration() {
+    void tableOfAnOldReleaseIsRejectedWithTheStatementsToRun() {
         this.jdbc.execute("DROP TABLE EASYSSF_PROCESSED_SET");
         this.jdbc
             .execute("CREATE TABLE EASYSSF_PROCESSED_SET (ISSUER VARCHAR(255) NOT NULL, JTI VARCHAR(255) NOT NULL, "
                     + "PROCESSED_AT BIGINT NOT NULL, CONSTRAINT EASYSSF_PROCESSED_SET_PK PRIMARY KEY (ISSUER, JTI))");
         assertThatIllegalStateException().isThrownBy(() -> new JdbcSsfJtiDedupStore(this.jdbc, PREFIX))
-            .withMessageContaining("ALTER TABLE EASYSSF_PROCESSED_SET ADD STATE");
+            .withMessageContaining("ALTER TABLE EASYSSF_PROCESSED_SET ADD STATE")
+            .withMessageContaining("RENAME COLUMN PROCESSED_AT TO STATE_CHANGED_AT")
+            .withMessageContaining("migration/");
         this.jdbc.execute("ALTER TABLE EASYSSF_PROCESSED_SET ADD STATE VARCHAR(16) DEFAULT 'PROCESSED' NOT NULL");
+        assertThatIllegalStateException().isThrownBy(() -> new JdbcSsfJtiDedupStore(this.jdbc, PREFIX))
+            .withMessageContaining("[STATE_CHANGED_AT]");
+        this.jdbc.execute("ALTER TABLE EASYSSF_PROCESSED_SET RENAME COLUMN PROCESSED_AT TO STATE_CHANGED_AT");
         assertThat(new JdbcSsfJtiDedupStore(this.jdbc, PREFIX).claim(set("jti-1")).isNew()).isTrue();
     }
 

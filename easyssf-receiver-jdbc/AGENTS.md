@@ -5,9 +5,10 @@ The JDBC stores of the receiver in plain SQL, over the small `SsfJdbcOperations`
 
 - The schema is `src/main/resources/org/easyssf/receiver/jdbc/schema.sql`, the current state for a
   fresh installation; it has to run on H2, PostgreSQL and MySQL unchanged. Every schema change also
-  ships a migration script `migration/V<release>__<topic>.sql` (Flyway naming) and, for a new column,
-  an entry in the table's `JdbcSsfSchema.*Upgrades` list so that `prepareTable` adds it where it may
-  create tables. Keep changes additive with defaults; `migrationScriptsLeadToTheCurrentSchema` checks
+  ships a migration script `migration/V<release>__<topic>.sql` (Flyway naming) and, for a new or
+  renamed column, an entry in the table's `JdbcSsfSchema.*Upgrades` list so that `prepareTable` adds
+  it where it may create tables (the entry names the column that is missing afterwards and the
+  statement that makes it exist, an `ADD` or a `RENAME COLUMN`). Keep changes additive with defaults; `migrationScriptsLeadToTheCurrentSchema` checks
   that the scripts end at the current schema. Prefer standard SQL to dialect features; a result limit goes
   through `SsfJdbcOperations.query(sql, maxRows, ...)` (the driver's `setMaxRows`), not through
   `FETCH FIRST` or `LIMIT`.

@@ -3,16 +3,16 @@
 -- Installations that migrate from release to release use the scripts in migration/ instead, one per release
 -- that changed the schema, named for Flyway.
 
--- SETs that were processed or are being processed (STATE 'PROCESSED' / 'IN_PROGRESS', PROCESSED_AT the time of
--- the last state change), see JdbcSsfJtiDedupStore.
+-- SETs that were processed or are being processed (STATE 'PROCESSED' / 'IN_PROGRESS', STATE_CHANGED_AT the time
+-- of the last state change, which also fences the claim), see JdbcSsfJtiDedupStore.
 CREATE TABLE EASYSSF_PROCESSED_SET (
     ISSUER VARCHAR(255) NOT NULL,
     JTI VARCHAR(255) NOT NULL,
     STATE VARCHAR(16) NOT NULL,
-    PROCESSED_AT BIGINT NOT NULL,
+    STATE_CHANGED_AT BIGINT NOT NULL,
     CONSTRAINT EASYSSF_PROCESSED_SET_PK PRIMARY KEY (ISSUER, JTI)
 );
-CREATE INDEX EASYSSF_PROCESSED_SET_IX1 ON EASYSSF_PROCESSED_SET (PROCESSED_AT);
+CREATE INDEX EASYSSF_PROCESSED_SET_IX1 ON EASYSSF_PROCESSED_SET (STATE_CHANGED_AT);
 
 -- revoked sessions (KIND 'SESSION') and subjects (KIND 'SUBJECT') of an issuer, see JdbcSsfTokenRevocationStore
 CREATE TABLE EASYSSF_REVOCATION (

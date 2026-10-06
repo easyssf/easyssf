@@ -80,19 +80,23 @@ public final class JdbcSsfSchema {
                     ISSUER VARCHAR(255) NOT NULL,
                     JTI VARCHAR(255) NOT NULL,
                     STATE VARCHAR(16) NOT NULL,
-                    PROCESSED_AT BIGINT NOT NULL,
+                    STATE_CHANGED_AT BIGINT NOT NULL,
                     CONSTRAINT %s_PK PRIMARY KEY (ISSUER, JTI)
-                )""".formatted(table, name), "CREATE INDEX %s_IX1 ON %s (PROCESSED_AT)".formatted(name, table));
+                )""".formatted(table, name), "CREATE INDEX %s_IX1 ON %s (STATE_CHANGED_AT)".formatted(name, table));
     }
 
     /**
      * The columns later releases added to the table of the {@link JdbcSsfJtiDedupStore}:
-     * {@code STATE} in 0.3.0.
+     * {@code STATE} in 0.3.0, and {@code STATE_CHANGED_AT} in 0.4.0, which is
+     * {@code PROCESSED_AT} renamed ({@code RENAME COLUMN}, which H2, PostgreSQL and MySQL
+     * 8 support) because it records the claim as well as the completion.
      */
     public static List<Upgrade> processedSetUpgrades(String tablePrefix) {
         String table = processedSetTable(tablePrefix);
-        return List
-            .of(new Upgrade("STATE", "ALTER TABLE " + table + " ADD STATE VARCHAR(16) DEFAULT 'PROCESSED' NOT NULL"));
+        return List.of(
+                new Upgrade("STATE", "ALTER TABLE " + table + " ADD STATE VARCHAR(16) DEFAULT 'PROCESSED' NOT NULL"),
+                new Upgrade("STATE_CHANGED_AT",
+                        "ALTER TABLE " + table + " RENAME COLUMN PROCESSED_AT TO STATE_CHANGED_AT"));
     }
 
     /**
@@ -170,9 +174,7 @@ public final class JdbcSsfSchema {
             createStatements.forEach(jdbc::execute);
             return;
         }
-        List<Upgrade> missing = upgrades.stream()
-            .filter((upgrade) -> !columnExists(jdbc, table, upgrade.column()))
-            .toList();
+        List<Upgrade> missing = missingUpgrades(jdbc, table, upgrades);
         if (missing.isEmpty()) {
             return;
         }
@@ -193,6 +195,13 @@ public final class JdbcSsfSchema {
                 }
             }
         }
+    }
+
+    /**
+     * @return the upgrades whose column the existing table lacks
+     */
+    public static List<Upgrade> missingUpgrades(SsfJdbcOperations jdbc, String table, List<Upgrade> upgrades) {
+        return upgrades.stream().filter((upgrade) -> !columnExists(jdbc, table, upgrade.column())).toList();
     }
 
     private static boolean columnExists(SsfJdbcOperations jdbc, String table, String column) {

@@ -338,9 +338,10 @@ the state is kept in its database instead, without further configuration:
   at-least-once processing with concurrent deliveries suppressed, not exactly once: handlers stay
   idempotent and key their side effects by `eventContext.idempotencyKey()`. Set the lease longer than
   your longest handler.
-- **Upgrading from 0.1.0 or 0.2.0**: run `migration/V0_3_0__dedup_state_and_poll_acks.sql`, which adds
-  the column `STATE` to `EASYSSF_PROCESSED_SET` and creates `EASYSSF_POLL_ACK`; with
-  `initialize-schema` `embedded` or `always` the receiver does it on startup.
+- **Upgrading**: from 0.1.0 or 0.2.0 run `migration/V0_3_0__dedup_state_and_poll_acks.sql`, which adds
+  the column `STATE` to `EASYSSF_PROCESSED_SET` and creates `EASYSSF_POLL_ACK`; from 0.3.0 or earlier run
+  `migration/V0_4_0__state_changed_at.sql`, which renames `PROCESSED_AT` to `STATE_CHANGED_AT`. With
+  `initialize-schema` `embedded` or `always` the receiver does both on startup.
 - **Opting out**: `easyssf.receiver.jdbc.enabled=false` keeps the state in memory although the
   application has a database. Your own `SsfJtiDedupStore`, `SsfTokenRevocationStore` or
   `SsfPollAckStore` bean takes precedence in any case.

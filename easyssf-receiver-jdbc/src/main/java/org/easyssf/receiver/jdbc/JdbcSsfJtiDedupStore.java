@@ -19,13 +19,13 @@ import org.easyssf.receiver.set.SsfJtiDedupStore;
  * <p>
  * A claim inserts the row with the state {@code IN_PROGRESS}: the primary key of the
  * table makes that atomic, and a second instance that meets the row leaves the SET alone.
- * The handlers' success turns the state into {@code PROCESSED}. {@code PROCESSED_AT} is
- * the time of the last state change, so an {@code IN_PROGRESS} row older than the lease
- * (60 seconds by default) counts as abandoned by a crashed instance and the next claim
- * takes it over. That {@code PROCESSED_AT} is also the token of the claim: the success or
- * failure of the handlers only changes the row while it still carries the token they were
- * granted, so an instance that outlived the lease leaves the claim of the taker-over
- * alone.
+ * The handlers' success turns the state into {@code PROCESSED}. {@code STATE_CHANGED_AT}
+ * (called {@code PROCESSED_AT} before 0.4.0) is the time of the last state change, so an
+ * {@code IN_PROGRESS} row older than the lease (60 seconds by default) counts as
+ * abandoned by a crashed instance and the next claim takes it over. That
+ * {@code STATE_CHANGED_AT} is also the token of the claim: the success or failure of the
+ * handlers only changes the row while it still carries the token they were granted, so an
+ * instance that outlived the lease leaves the claim of the taker-over alone.
  *
  * <p>
  * SETs are forgotten after the retention time: the store deletes them when it is written
@@ -77,40 +77,40 @@ public class JdbcSsfJtiDedupStore implements SsfJtiDedupStore, JdbcSsfExpiringSt
         SsfAssert.notNull(jdbc, "jdbc must not be null");
         this.table = JdbcSsfSchema.processedSetTable(tablePrefix);
         this.jdbc = jdbc;
-        this.insert = "INSERT INTO " + this.table + " (ISSUER, JTI, STATE, PROCESSED_AT) VALUES (?, ?, ?, ?)";
-        this.select = "SELECT STATE, PROCESSED_AT FROM " + this.table + " WHERE ISSUER = ? AND JTI = ?";
-        this.takeOver = "UPDATE " + this.table + " SET PROCESSED_AT = ? WHERE ISSUER = ? AND JTI = ? AND STATE = '"
-                + IN_PROGRESS + "' AND PROCESSED_AT = ?";
-        // processed and forget are fenced by the claim's token, the PROCESSED_AT of the
+        this.insert = "INSERT INTO " + this.table + " (ISSUER, JTI, STATE, STATE_CHANGED_AT) VALUES (?, ?, ?, ?)";
+        this.select = "SELECT STATE, STATE_CHANGED_AT FROM " + this.table + " WHERE ISSUER = ? AND JTI = ?";
+        this.takeOver = "UPDATE " + this.table + " SET STATE_CHANGED_AT = ? WHERE ISSUER = ? AND JTI = ? AND STATE = '"
+                + IN_PROGRESS + "' AND STATE_CHANGED_AT = ?";
+        // processed and forget are fenced by the claim's token, the STATE_CHANGED_AT of
+        // the
         // claim
         this.markProcessed = "UPDATE " + this.table + " SET STATE = '" + PROCESSED
-                + "', PROCESSED_AT = ? WHERE ISSUER = ? AND JTI = ? AND STATE = '" + IN_PROGRESS
-                + "' AND PROCESSED_AT = ?";
+                + "', STATE_CHANGED_AT = ? WHERE ISSUER = ? AND JTI = ? AND STATE = '" + IN_PROGRESS
+                + "' AND STATE_CHANGED_AT = ?";
         this.delete = "DELETE FROM " + this.table + " WHERE ISSUER = ? AND JTI = ? AND STATE = '" + IN_PROGRESS
-                + "' AND PROCESSED_AT = ?";
-        this.deleteExpired = "DELETE FROM " + this.table + " WHERE PROCESSED_AT < ?";
-        requireStateColumn();
-    }
-
-    private void requireStateColumn() {
-        try {
-            this.jdbc.query("SELECT STATE FROM " + this.table + " WHERE 1 = 0", (row) -> row.getString(1));
-        }
-        catch (SsfJdbcException ex) {
-            if (this.jdbc.tableExists(this.table)) {
-                throw new IllegalStateException("The table " + this.table + " of the easyssf receiver predates "
-                        + "easyssf 0.3.0 and lacks the STATE column. Add it with: ALTER TABLE " + this.table
-                        + " ADD STATE VARCHAR(16) DEFAULT '" + PROCESSED + "' NOT NULL, or run the migration "
-                        + "scripts in " + JdbcSsfSchema.MIGRATION_LOCATION, ex);
-            }
-            throw ex;
-        }
+                + "' AND STATE_CHANGED_AT = ?";
+        this.deleteExpired = "DELETE FROM " + this.table + " WHERE STATE_CHANGED_AT < ?";
+        requireCurrentColumns(tablePrefix);
     }
 
     /**
-     * Sets how long a processed SET is remembered. It has to cover the time a transmitter
-     * keeps trying to deliver a SET.
+     * Fails with the statements to run if the table predates this release: {@code STATE}
+     * came with 0.3.0, {@code STATE_CHANGED_AT} with 0.4.0.
      */
+    private void requireCurrentColumns(String tablePrefix) {
+        if (!this.jdbc.tableExists(this.table)) {
+            return; // the first access reports the missing table
+        }
+        List<JdbcSsfSchema.Upgrade> missing = JdbcSsfSchema.missingUpgrades(this.jdbc, this.table,
+                JdbcSsfSchema.processedSetUpgrades(tablePrefix));
+        if (!missing.isEmpty()) {
+            throw new IllegalStateException("The table " + this.table + " of the easyssf receiver predates this "
+                    + "release and lacks the column(s) " + missing.stream().map(JdbcSsfSchema.Upgrade::column).toList()
+                    + ". Run " + missing.stream().map(JdbcSsfSchema.Upgrade::statement).toList()
+                    + " or the migration scripts in " + JdbcSsfSchema.MIGRATION_LOCATION);
+        }
+    }
+
     public void setRetention(Duration retention) {
         SsfAssert.isTrue(retention != null && retention.isPositive(), "retention must be positive");
         this.retention = retention;
@@ -153,7 +153,8 @@ public class JdbcSsfJtiDedupStore implements SsfJtiDedupStore, JdbcSsfExpiringSt
             Instant since = Instant.ofEpochMilli(row.since());
             if (!since.plus(this.lease).isAfter(now)) {
                 // abandoned: take it over, unless another instance did just now. The new
-                // PROCESSED_AT is the token of the new claim; the old holder's token no
+                // STATE_CHANGED_AT is the token of the new claim; the old holder's token
+                // no
                 // longer matches, so it can neither complete nor forget this claim.
                 int taken = this.jdbc.update(this.takeOver, token, eventToken.iss(), eventToken.jti(), row.since());
                 return (taken == 1) ? Claim.granted(token) : Claim.inProgress();

@@ -31,10 +31,10 @@ class JdbcTemplateSsfJdbcOperationsTests {
                 JdbcSsfSchema.createProcessedSetTable(prefix), true, null);
         assertThat(this.jdbc.tableExists(JdbcSsfSchema.processedSetTable(prefix))).isTrue();
         this.jdbc.update(
-                "INSERT INTO EASYSSF_PROCESSED_SET (ISSUER, JTI, STATE, PROCESSED_AT) VALUES (?, ?, 'PROCESSED', ?)",
+                "INSERT INTO EASYSSF_PROCESSED_SET (ISSUER, JTI, STATE, STATE_CHANGED_AT) VALUES (?, ?, 'PROCESSED', ?)",
                 "i", "j", System.currentTimeMillis());
         assertThatExceptionOfType(SsfJdbcDuplicateKeyException.class).isThrownBy(() -> this.jdbc.update(
-                "INSERT INTO EASYSSF_PROCESSED_SET (ISSUER, JTI, STATE, PROCESSED_AT) VALUES (?, ?, 'PROCESSED', ?)",
+                "INSERT INTO EASYSSF_PROCESSED_SET (ISSUER, JTI, STATE, STATE_CHANGED_AT) VALUES (?, ?, 'PROCESSED', ?)",
                 "i", "j", System.currentTimeMillis()));
         JdbcSsfJtiDedupStore store = new JdbcSsfJtiDedupStore(this.jdbc, prefix);
         store.setRetention(Duration.ofDays(1));
