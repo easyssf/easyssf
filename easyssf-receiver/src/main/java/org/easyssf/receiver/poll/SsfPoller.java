@@ -46,6 +46,13 @@ import com.nimbusds.jose.util.JSONObjectUtils;
  * instead: the transmitter holds the request until SETs are available or its hold time
  * elapses (section 2.5), and the poller sends the next request as soon as it has handled
  * the response. A backlog is fetched with immediate requests in both modes.
+ *
+ * <p>
+ * Until the poll endpoint of the stream is known, typically because the
+ * {@code SsfStreamRegistrar} is still registering the stream when the poller starts, the
+ * poller looks again every {@link #setEndpointRetry(Duration) endpoint retry} (one
+ * second) rather than waiting the interval: not knowing the endpoint is a condition of
+ * the startup, not a request of the transmitter to slow down.
  */
 public class SsfPoller {
 
@@ -85,6 +92,8 @@ public class SsfPoller {
     private Duration interval = Duration.ofSeconds(30);
 
     private Duration initialDelay = Duration.ZERO;
+
+    private Duration endpointRetry = Duration.ofSeconds(1);
 
     private Duration longPollingHold;
 
@@ -181,6 +190,15 @@ public class SsfPoller {
      * (section 2.2); the request waits that long plus a margin for the response.
      * {@code null} returns to short polling.
      */
+    /**
+     * How soon the poller looks again while the poll endpoint of the stream is not known
+     * yet, one second by default; never longer than the interval.
+     */
+    public void setEndpointRetry(Duration endpointRetry) {
+        SsfAssert.isTrue(endpointRetry != null && endpointRetry.isPositive(), "endpointRetry must be positive");
+        this.endpointRetry = endpointRetry;
+    }
+
     public void setLongPolling(Duration hold) {
         SsfAssert.isTrue(hold == null || hold.isPositive(), "hold must be positive");
         this.longPollingHold = hold;
@@ -351,7 +369,11 @@ public class SsfPoller {
                 long started = System.nanoTime();
                 try {
                     PollResult result = this.polling.tryLock() ? pollLocked() : PollResult.SKIPPED;
-                    if (result.skipped()) {
+                    if (result.endpointUnknown()) {
+                        // the stream is still being registered: look again soon
+                        pause = (this.endpointRetry.compareTo(this.interval) < 0) ? this.endpointRetry : this.interval;
+                    }
+                    else if (result.skipped()) {
                         pause = pauseWhileSkipped();
                     }
                     else if (isLongPolling()) {
@@ -421,7 +443,7 @@ public class SsfPoller {
         URI endpoint = this.endpoint.get();
         if (endpoint == null) {
             logger.debug("Not polling, the poll endpoint of the SSF stream is not known yet");
-            return PollResult.SKIPPED;
+            return PollResult.NO_ENDPOINT;
         }
         if (Instant.now().isBefore(this.pausedUntil)) {
             logger.debug("Not polling, the SSF transmitter asked to wait until " + this.pausedUntil);
@@ -601,9 +623,15 @@ public class SsfPoller {
         return (response.get("sets") instanceof Map<?, ?> sets) ? (Map<String, Object>) sets : Map.of();
     }
 
-    private record PollResult(int fetched, boolean skipped) {
+    private record PollResult(int fetched, boolean skipped, boolean endpointUnknown) {
+
+        PollResult(int fetched, boolean skipped) {
+            this(fetched, skipped, false);
+        }
 
         static final PollResult SKIPPED = new PollResult(0, true);
+
+        static final PollResult NO_ENDPOINT = new PollResult(0, true, true);
 
     }
 

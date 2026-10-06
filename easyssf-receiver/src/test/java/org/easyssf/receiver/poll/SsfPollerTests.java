@@ -4,6 +4,7 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.easyssf.receiver.event.SsfEventHandler;
 import org.easyssf.receiver.http.JdkSsfHttpClient;
@@ -204,6 +205,26 @@ class SsfPollerTests {
         queue("session-1");
         assertThat(poller(() -> null, TestTransmitter.ACCESS_TOKEN).pollNow()).isZero();
         assertThat(this.handled).isEmpty();
+    }
+
+    @Test
+    void pollsSoonAfterTheEndpointBecomesKnownInsteadOfWaitingTheInterval() {
+        AtomicReference<URI> endpoint = new AtomicReference<>();
+        SsfPoller waiting = poller(endpoint::get, TestTransmitter.ACCESS_TOKEN);
+        waiting.setInterval(Duration.ofHours(1));
+        waiting.setEndpointRetry(Duration.ofMillis(100));
+        String jti = queue("session-1");
+        waiting.start();
+        try {
+            // the stream is still being registered: nothing is polled
+            await().during(Duration.ofMillis(300)).untilAsserted(() -> assertThat(this.handled).isEmpty());
+            // registered: the poller notices within the retry, not after the interval
+            endpoint.set(URI.create(transmitter.pollUri()));
+            await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(this.handled).containsExactly(jti));
+        }
+        finally {
+            waiting.stop();
+        }
     }
 
     @Test
