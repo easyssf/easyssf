@@ -6,6 +6,13 @@ The notable changes of every release. The section of a version is the text of it
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-06
+
+One schema change: the column PROCESSED_AT of EASYSSF_PROCESSED_SET becomes
+STATE_CHANGED_AT, which is what it has held since 0.3.0. Run the migration
+script V0_4_0__state_changed_at.sql, or let the receiver rename it on startup  
+where it may create tables.
+
 ### Changed
 
 - The column `PROCESSED_AT` of `EASYSSF_PROCESSED_SET` is now `STATE_CHANGED_AT`: since 0.3.0 it has
@@ -136,7 +143,8 @@ Java library and as a Spring Boot 4.1 starter.
 - The framework-free modules are Java modules; every artifact is signed, carries a CycloneDX
   SBOM and a self-contained POM.
 
-[Unreleased]: https://github.com/easyssf/easyssf/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/easyssf/easyssf/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/easyssf/easyssf/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/easyssf/easyssf/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/easyssf/easyssf/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/easyssf/easyssf/releases/tag/v0.1.0
