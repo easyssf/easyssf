@@ -192,15 +192,6 @@ public class SsfPoller {
     }
 
     /**
-     * Switches to long polling (RFC 8936, section 2.5): the first request of a poll asks
-     * the transmitter to hold it until SETs are available
-     * ({@code returnImmediately: false}), and a running poller sends the next request as
-     * soon as a response was handled.
-     * @param hold how long the transmitter holds a request, part of the agreement with it
-     * (section 2.2); the request waits that long plus a margin for the response.
-     * {@code null} returns to short polling.
-     */
-    /**
      * How soon the poller looks again while the poll endpoint of the stream is not known
      * yet, one second by default; never longer than the interval.
      */
@@ -209,6 +200,15 @@ public class SsfPoller {
         this.endpointRetry = endpointRetry;
     }
 
+    /**
+     * Switches to long polling (RFC 8936, section 2.5): the first request of a poll asks
+     * the transmitter to hold it until SETs are available
+     * ({@code returnImmediately: false}), and a running poller sends the next request as
+     * soon as a response was handled.
+     * @param hold how long the transmitter holds a request, part of the agreement with it
+     * (section 2.2); the request waits that long plus a margin for the response.
+     * {@code null} returns to short polling.
+     */
     public void setLongPolling(Duration hold) {
         SsfAssert.isTrue(hold == null || hold.isPositive(), "hold must be positive");
         this.longPollingHold = hold;
