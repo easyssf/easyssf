@@ -47,12 +47,12 @@ refresh_token = {{refresh_token}}
 
 ### 1.4 Call the API with the same access token: 401 invalid_token
 # The token has not expired, but its session was revoked.
-< {%
-    // give Keycloak a moment to deliver the event
-    const until = Date.now() + 4000;
-    while (Date.now() < until) {
-    }
-%}
+#< {%
+#    // give Keycloak a moment to deliver the event
+#    const until = Date.now() + 4000;
+#    while (Date.now() < until) {
+#    }
+#%}
 GET {{resourceServer}}/api/me
 Authorization: Bearer {{access_token}}
 
