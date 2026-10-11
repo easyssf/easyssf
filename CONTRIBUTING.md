@@ -104,12 +104,10 @@ GitHub Actions, see [`.github/workflows`](.github/workflows):
   workflows from outside collaborators"). The conformance tests are not part of it.
 - [`release.yml`](.github/workflows/release.yml) publishes a release, see below.
 - [`conformance.yml`](.github/workflows/conformance.yml) runs the four conformance plans against the
-  suite, one job per plan, on demand. The suite and nginx images are the ones `ConformanceSettings` of
-  `easyssf-receiver-spring-boot-conformance-tests` names, the single place to change them (the suite's `latest` build until
-  a release contains the SSF test fixes, then that release pinned by digest); a run can name other
-  images. Once a suite release contains the fix
-  for the poll race of `release-v5.3.1`, pin that release and enable the `schedule` trigger for a
-  nightly run.
+  suite, one job per plan, every night and on demand. The suite and nginx images are the ones
+  `ConformanceSettings` of `easyssf-test-conformance` names, the last suite release pinned by digest,
+  the single place to change them; a manual run can name other images, for example the registry's
+  `latest` tag to try the suite's master ahead of a release.
 
 ## Releasing
 

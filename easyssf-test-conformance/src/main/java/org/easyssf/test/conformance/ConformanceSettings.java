@@ -37,17 +37,14 @@ public final class ConformanceSettings {
     static final String RECEIVER_PUSH_URL = "cts.receiver.push-url";
 
     /**
-     * The suite the default images are, for messages. "latest" is the suite's current
-     * master build, used until a release contains the SSF test fixes made since
-     * release-v5.3.1; from then on the release is pinned by digest here, the single place
-     * to change the images.
+     * The suite release the default images are: release-v5.3.2 of 2026-10-09, the first
+     * release with the SSF receiver tests as they are on master (the poll race of
+     * release-v5.3.1 included), pinned by the digest of its multi-platform image. The
+     * single place to change the images.
      */
-    static final String DEFAULT_SUITE_VERSION = "latest";
+    static final String DEFAULT_SUITE_IMAGE = "registry.gitlab.com/openid/conformance-suite@sha256:c795df1b151e0c2f2e40f17a2470991cc38bc91628449e9bb090e2372fe8b822";
 
-    static final String DEFAULT_SUITE_IMAGE = "registry.gitlab.com/openid/conformance-suite:" + DEFAULT_SUITE_VERSION;
-
-    static final String DEFAULT_SUITE_NGINX_IMAGE = "registry.gitlab.com/openid/conformance-suite/nginx:"
-            + DEFAULT_SUITE_VERSION;
+    static final String DEFAULT_SUITE_NGINX_IMAGE = "registry.gitlab.com/openid/conformance-suite/nginx@sha256:607458218abb58204201e4d283af90177d6b542535a99a21041d399a1505a6a0";
 
     /**
      * The suite's own compose file runs MongoDB 6.0.13, as the suite does in production.

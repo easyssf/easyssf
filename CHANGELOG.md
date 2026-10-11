@@ -6,6 +6,13 @@ The notable changes of every release. The section of a version is the text of it
 
 ## [Unreleased]
 
+### Changed
+
+- The conformance tests run `release-v5.3.2` of the OpenID conformance suite, the first release with
+  the SSF receiver tests as they are on the suite's master, pinned by digest in `ConformanceSettings`
+  of `easyssf-test-conformance` instead of the suite's moving `latest` build. The `Conformance`
+  workflow runs every night.
+
 ## [0.5.0] - 2026-10-06
 
 The first poll follows the registration of the stream at once: the registrar wakes the
