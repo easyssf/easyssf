@@ -118,6 +118,25 @@ public class InMemorySsfJtiDedupStore implements SsfJtiDedupStore {
         }
     }
 
+    @Override
+    public Claim renew(SsfEventToken eventToken, Claim claim) {
+        SsfAssert.notNull(claim, "claim must not be null");
+        String key = SsfJtiDedupStore.key(eventToken);
+        this.lock.lock();
+        try {
+            Known entry = this.entries.get(key);
+            if (entry != null && !holds(entry, claim)) {
+                return null;
+            }
+            // an evicted claim is restored, as processed() records it as well
+            this.entries.put(key, new Known(State.IN_PROGRESS, this.clock.instant(), claim.token()));
+            return claim;
+        }
+        finally {
+            this.lock.unlock();
+        }
+    }
+
     /**
      * Whether the entry is the claim given: in progress and not taken over since.
      */

@@ -32,7 +32,7 @@ SsfEventHandler securityEvents() {
 easyssf:
   receiver:
     transmitter-issuer: https://idp.example/realms/demo   # required
-    expected-audience: https://my-app.example             # recommended
+    expected-audience: https://my-app.example             # or let the application register the stream
     push:
       expected-auth-header: Bearer ${SSF_PUSH_SECRET}     # recommended
 ```
@@ -79,8 +79,9 @@ Things to know:
   are kept in memory of that instance. If the application has a database they are kept there, see
   [Keeping state in the database](#keeping-state-in-the-database). For any other shared store
   (Redis, ...) provide a `SsfTokenRevocationStore` bean.
-- **`easyssf.receiver.resource-server.revocation-ttl`** (default `1h`) must be at least the maximum
-  lifetime of your access tokens. Revocations are forgotten after that time.
+- **`easyssf.receiver.resource-server.revocation-ttl`** (default `24h`) must be at least the maximum
+  lifetime of the tokens it guards. Revocations are forgotten after that time, so a revoked token
+  whose revocation was forgotten before it expired is valid again.
 - **Issuers**: a revocation applies to the tokens of one issuer: the `iss` of the event's `iss_sub`
   identifier, for a session the issuer of the user it belongs to, else the transmitter. It is matched
   against the `iss` claim of the access token, so the transmitter must be the issuer of the tokens, or
@@ -246,7 +247,9 @@ On startup the `SsfStreamRegistrar`
 
 This happens in the background and is retried with a growing delay (up to 30s), a transmitter that
 is down does not keep the application from starting. As long as `easyssf.receiver.expected-audience` is
-not set, the audience of the stream is used to validate SETs once the stream is known.
+not set, the audience of the stream is used to validate SETs once the stream is known; until then a
+pushed SET is answered with `503` and a polled one left unacknowledged, so the transmitter delivers
+it again.
 `easyssf.receiver.stream.delete-on-shutdown=true` deletes the stream when the application stops.
 
 The `SsfStreamClient` bean gives access to the whole stream management API (SSF 1.0, section 8.1):
@@ -336,11 +339,11 @@ the state is kept in its database instead, without further configuration:
 - **Several instances**: a SET is claimed before its handlers run and marked processed afterwards. An
   instance that receives a SET another one is handling leaves it for the transmitter's redelivery,
   neither handling nor acknowledging it, so a handler failure on the first instance is not masked by
-  an acknowledgement of the second. A claim older than `easyssf.receiver.dedup.lease` (60 seconds)
-  counts as abandoned by a crashed instance and the SET is handled again. The guarantee is therefore
-  at-least-once processing with concurrent deliveries suppressed, not exactly once: handlers stay
-  idempotent and key their side effects by `eventContext.idempotencyKey()`. Set the lease longer than
-  your longest handler.
+  an acknowledgement of the second. The claim is renewed every third of
+  `easyssf.receiver.dedup.lease` (60 seconds) while the handlers run; a claim that was not renewed
+  for the lease counts as abandoned by a crashed instance and the SET is handled again. The guarantee
+  is therefore at-least-once processing with concurrent deliveries suppressed, not exactly once:
+  handlers stay idempotent and key their side effects by `eventContext.idempotencyKey()`.
 - **Upgrading**: from 0.1.0 or 0.2.0 run `migration/V0_3_0__dedup_state_and_poll_acks.sql`, which adds
   the column `STATE` to `EASYSSF_PROCESSED_SET` and creates `EASYSSF_POLL_ACK`; from 0.3.0 or earlier run
   `migration/V0_4_0__state_changed_at.sql`, which renames `PROCESSED_AT` to `STATE_CHANGED_AT`. With
@@ -432,7 +435,7 @@ name, with its own status. Switch it off with `management.health.easyssf.enabled
 | `easyssf.receiver.transmitter-metadata-url` | derived | By default `<host>/.well-known/ssf-configuration<issuer-path>` (SSF 1.0, section 7.2), falling back to `<issuer>/.well-known/ssf-configuration`. |
 | `easyssf.receiver.transmitter-jwks-url` | from metadata | Skips metadata discovery when set. |
 | `easyssf.receiver.allow-insecure-http` | `false` | Accepts `http` for the transmitter issuer and the endpoints it publishes on any host, with a warning on startup. For development only. |
-| `easyssf.receiver.expected-audience` | | When set, every SET must contain it in `aud`. |
+| `easyssf.receiver.expected-audience` | | Every SET must contain it in `aud`. Without it the audience of the stream the receiver registers or looks up (`stream.management=receiver`, `stream.id`) is required instead, once the stream is known. One of the two, or `set-validation.allow-any-audience`, is required: a receiver that cannot know the audience of its SETs does not start. |
 | `easyssf.receiver.delivery-method` | `push` | `push` or `poll`. |
 | `easyssf.receiver.understood-subject-members` | `user, session, device, application, tenant, org_unit, group` | The members of a complex subject the application interprets; a SET with a member the transmitter declared critical that is not listed is rejected. |
 | `easyssf.receiver.event-aliases.*` | | Aliases for event type URIs, e.g. `AcmeLogin: https://events.acme.example/login`, usable wherever an event type is named. |
@@ -466,6 +469,7 @@ name, with its own status. Switch it off with `management.health.easyssf.enabled
 | `easyssf.receiver.set-validation.require-type-header` | `true` | Requires `typ: secevent+jwt`. |
 | `easyssf.receiver.set-validation.subject-compatibility` | `strict-ssf-1-0` | Requires the top-level `sub_id` claim of SSF 1.0. `legacy` accepts SETs of transmitters following earlier drafts, which put the subject into the event. |
 | `easyssf.receiver.set-validation.clock-skew` | `60s` | Tolerance for `iat` in the future. |
+| `easyssf.receiver.set-validation.allow-any-audience` | `false` | Accepts SETs whatever their `aud` when neither `expected-audience` nor a registered or looked-up stream tells the audience, with a warning on startup. SETs the transmitter issued for other receivers are then accepted as well; only for a transmitter that sends no `aud`. |
 | `easyssf.receiver.push.enabled` | `true` | |
 | `easyssf.receiver.push.endpoint-path` | `/ssf/push` | |
 | `easyssf.receiver.push.expected-auth-header` | | Exact `Authorization` header value the transmitter must send. |
@@ -474,7 +478,7 @@ name, with its own status. Switch it off with `management.health.easyssf.enabled
 | `easyssf.receiver.dedup.enabled` | `true` | |
 | `easyssf.receiver.dedup.capacity` | `10000` | Size of the in-memory `jti` store. |
 | `easyssf.receiver.dedup.retention` | `7d` | How long the JDBC store remembers a processed SET. |
-| `easyssf.receiver.dedup.lease` | `60s` | How long a SET counts as being handled by the instance that claimed it; longer than the longest handler. |
+| `easyssf.receiver.dedup.lease` | `60s` | How long a SET counts as being handled by the instance that claimed it without renewing the claim, which it does every third of this time while its handlers run. |
 | `easyssf.receiver.jdbc.enabled` | `true` | Keep state in the database if the application has a `JdbcTemplate`. |
 | `easyssf.receiver.jdbc.initialize-schema` | `embedded` | When to create missing tables: `embedded`, `always` or `never`. |
 | `easyssf.receiver.jdbc.table-prefix` | `EASYSSF_` | Prefix of the table names. |
@@ -483,7 +487,7 @@ name, with its own status. Switch it off with `management.health.easyssf.enabled
 | `easyssf.receiver.jdbc.ack-delete-batch-size` | `100` | How many delivered acknowledgements one `DELETE` of the JDBC store removes at once. |
 | `easyssf.receiver.resource-server.enabled` | `true` | |
 | `easyssf.receiver.resource-server.event-types` | `CaepSessionRevoked` | Events that revoke access tokens. |
-| `easyssf.receiver.resource-server.revocation-ttl` | `1h` | |
+| `easyssf.receiver.resource-server.revocation-ttl` | `24h` | At least the maximum lifetime of the tokens it guards. |
 | `easyssf.receiver.oidc-client.enabled` | `true` | |
 | `easyssf.receiver.oidc-client.session-event-types` | `CaepSessionRevoked` | Events that terminate the session (or user sessions) of their subject. |
 | `easyssf.receiver.oidc-client.user-event-types` | `CaepCredentialChange` | Events that terminate all sessions of their subject's user. |

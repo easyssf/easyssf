@@ -1,8 +1,14 @@
 package org.easyssf.receiver.set;
 
+import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 
 import org.easyssf.core.SsfDeliveryMethod;
@@ -24,8 +30,14 @@ import org.slf4j.LoggerFactory;
 /**
  * Processes a received SET independent of how it was delivered: verifies it, skips it if
  * it was processed before and hands it to the {@link SsfEventHandler handlers}.
+ *
+ * <p>
+ * With a {@link SsfJtiDedupStore} the SET is claimed while the handlers run. A
+ * {@link #setClaimRenewal claim renewal} keeps the claim alive while a handler runs
+ * longer than the store's lease; without it the lease bounds the handlers. The renewals
+ * run on a daemon thread of their own, {@link #close} stops it.
  */
-public class SsfSetProcessor {
+public class SsfSetProcessor implements AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(SsfSetProcessor.class);
 
@@ -60,6 +72,14 @@ public class SsfSetProcessor {
 
     private Function<String, Collection<String>> criticalSubjectMembers = (issuer) -> List.of();
 
+    private Duration claimRenewal;
+
+    /** created with the first renewal, a daemon thread shared by all SETs in progress */
+    private volatile ScheduledExecutorService renewals;
+
+    /** a lock rather than synchronized, which pins virtual threads before JDK 24 */
+    private final ReentrantLock renewalsLock = new ReentrantLock();
+
     /**
      * @param verifier verifies the SETs
      * @param dedupStore remembers processed SETs, {@code null} to process duplicates
@@ -76,6 +96,20 @@ public class SsfSetProcessor {
     public void setMetrics(SsfReceiverMetrics metrics) {
         SsfAssert.notNull(metrics, "metrics must not be null");
         this.metrics = metrics;
+    }
+
+    /**
+     * Renews the claim of a SET at the given interval while its handlers run
+     * ({@link SsfJtiDedupStore#renew}), so that a handler that runs longer than the lease
+     * of the dedup store does not lose the SET to another instance; a third of the lease
+     * is a good interval. Off by default: the lease then bounds the handlers. A renewal
+     * that finds the claim taken over stops, and the result of the handlers is not
+     * recorded, as without renewal after the lease.
+     * @param interval the interval between two renewals, {@code null} to turn renewal off
+     */
+    public void setClaimRenewal(Duration interval) {
+        SsfAssert.isTrue(interval == null || interval.isPositive(), "interval must be positive");
+        this.claimRenewal = interval;
     }
 
     /**
@@ -187,17 +221,30 @@ public class SsfSetProcessor {
             logger.info("Received stream verification event from " + eventToken.iss());
         }
         RuntimeException failure = null;
-        for (SsfEventHandler handler : this.handlers) {
-            try {
-                handler.handle(eventContext);
-            }
-            catch (RuntimeException ex) {
-                // a failing handler must not keep the others from reacting to the event
-                logger.error("SsfEventHandler " + handler.getClass().getName() + " failed for SET " + eventToken.jti(),
-                        ex);
-                if (failure == null) {
-                    failure = ex;
+        ClaimRenewal renewal = (claim != null && this.claimRenewal != null) ? new ClaimRenewal(eventToken, claim)
+                : null;
+        try {
+            for (SsfEventHandler handler : this.handlers) {
+                try {
+                    handler.handle(eventContext);
                 }
+                catch (RuntimeException ex) {
+                    // a failing handler must not keep the others from reacting to the
+                    // event
+                    logger.error(
+                            "SsfEventHandler " + handler.getClass().getName() + " failed for SET " + eventToken.jti(),
+                            ex);
+                    if (failure == null) {
+                        failure = ex;
+                    }
+                }
+            }
+        }
+        finally {
+            if (renewal != null) {
+                // the claim as last renewed; a taken-over one no longer matches, so the
+                // store ignores the outcome of the handlers
+                claim = renewal.stop();
             }
         }
         if (failure != null) {
@@ -215,6 +262,106 @@ public class SsfSetProcessor {
         eventContext.eventTypes()
             .forEach((eventType) -> this.metrics.eventHandled(transmitter, eventType, deliveryMethod));
         return Outcome.HANDLED;
+    }
+
+    /**
+     * Stops the thread that renews claims, if any was started.
+     */
+    @Override
+    public void close() {
+        ScheduledExecutorService renewals = this.renewals;
+        if (renewals != null) {
+            renewals.shutdownNow();
+        }
+    }
+
+    private ScheduledExecutorService renewals() {
+        ScheduledExecutorService renewals = this.renewals;
+        if (renewals == null) {
+            this.renewalsLock.lock();
+            try {
+                renewals = this.renewals;
+                if (renewals == null) {
+                    renewals = Executors.newSingleThreadScheduledExecutor((task) -> {
+                        Thread thread = new Thread(task, "easyssf-claim-renewal");
+                        thread.setDaemon(true);
+                        return thread;
+                    });
+                    this.renewals = renewals;
+                }
+            }
+            finally {
+                this.renewalsLock.unlock();
+            }
+        }
+        return renewals;
+    }
+
+    /**
+     * The claim of a SET in progress, renewed at the {@link #setClaimRenewal interval}
+     * until the handlers are done. A renewal and the end of the handlers exclude each
+     * other, so the claim the outcome is recorded with is the one the store holds.
+     */
+    private final class ClaimRenewal implements Runnable {
+
+        private final SsfEventToken eventToken;
+
+        private final ReentrantLock lock = new ReentrantLock();
+
+        private final ScheduledFuture<?> task;
+
+        private SsfJtiDedupStore.Claim claim;
+
+        private boolean stopped;
+
+        ClaimRenewal(SsfEventToken eventToken, SsfJtiDedupStore.Claim claim) {
+            this.eventToken = eventToken;
+            this.claim = claim;
+            long interval = SsfSetProcessor.this.claimRenewal.toMillis();
+            this.task = renewals().scheduleAtFixedRate(this, interval, interval, TimeUnit.MILLISECONDS);
+        }
+
+        @Override
+        public void run() {
+            this.lock.lock();
+            try {
+                if (this.stopped) {
+                    return;
+                }
+                SsfJtiDedupStore.Claim renewed = SsfSetProcessor.this.dedupStore.renew(this.eventToken, this.claim);
+                if (renewed == null) {
+                    logger.warn("SET " + this.eventToken.jti() + " was taken over by another instance while its "
+                            + "handlers were still running; the lease of the dedup store is shorter than they take");
+                    this.stopped = true;
+                }
+                else {
+                    this.claim = renewed;
+                }
+            }
+            catch (RuntimeException ex) {
+                // tried again at the next interval
+                logger.warn("Could not renew the claim of SET " + this.eventToken.jti() + ": " + ex.getMessage());
+            }
+            finally {
+                this.lock.unlock();
+            }
+        }
+
+        /**
+         * @return the claim as last renewed, once no renewal runs any more
+         */
+        SsfJtiDedupStore.Claim stop() {
+            this.task.cancel(false);
+            this.lock.lock();
+            try {
+                this.stopped = true;
+                return this.claim;
+            }
+            finally {
+                this.lock.unlock();
+            }
+        }
+
     }
 
     private void checkCriticalSubjectMembers(SsfEventContext eventContext) {

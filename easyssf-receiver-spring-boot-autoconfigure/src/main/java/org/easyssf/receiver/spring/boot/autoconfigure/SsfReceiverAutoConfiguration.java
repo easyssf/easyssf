@@ -199,6 +199,10 @@ public final class SsfReceiverAutoConfiguration {
         SsfJtiDedupStore store = properties.getDedup().isEnabled() ? dedupStore.getIfAvailable() : null;
         SsfSetVerifier verifier = (encodedSet) -> transmitters.getObject().verifier().verify(encodedSet);
         SsfSetProcessor processor = new SsfSetProcessor(verifier, store, handlers.orderedStream().toList());
+        if (store != null) {
+            // a handler may run longer than the lease: the claim is renewed meanwhile
+            processor.setClaimRenewal(properties.getDedup().getLease().dividedBy(3));
+        }
         processor.setMetrics(metrics.getIfAvailable(() -> SsfReceiverMetrics.NOOP));
         processor.setStreamVerifications((issuer) -> transmitters.getObject().streamVerification(issuer));
         processor.setUnderstoodSubjectMembers(Set.copyOf(properties.getUnderstoodSubjectMembers()));

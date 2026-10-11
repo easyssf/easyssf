@@ -506,6 +506,15 @@ public class SsfTransmitterProperties {
          */
         private Duration clockSkew = Duration.ofSeconds(60);
 
+        /**
+         * Accepts SETs whatever audience they carry when neither 'expected-audience' is
+         * set nor a stream is registered or looked up ('stream.management', 'stream.id')
+         * that tells the audience. Off by default: a receiver without a known audience
+         * fails to start, because it would accept SETs the transmitter issued for other
+         * receivers. Only for a transmitter that sends no 'aud'.
+         */
+        private boolean allowAnyAudience = false;
+
         public List<String> getAcceptedAlgorithms() {
             return this.acceptedAlgorithms;
         }
@@ -544,6 +553,14 @@ public class SsfTransmitterProperties {
 
         public void setClockSkew(Duration clockSkew) {
             this.clockSkew = clockSkew;
+        }
+
+        public boolean isAllowAnyAudience() {
+            return this.allowAnyAudience;
+        }
+
+        public void setAllowAnyAudience(boolean allowAnyAudience) {
+            this.allowAnyAudience = allowAnyAudience;
         }
 
     }

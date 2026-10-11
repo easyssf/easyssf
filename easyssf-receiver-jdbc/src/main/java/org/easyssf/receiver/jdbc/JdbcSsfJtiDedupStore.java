@@ -25,7 +25,9 @@ import org.easyssf.receiver.set.SsfJtiDedupStore;
  * abandoned by a crashed instance and the next claim takes it over. That
  * {@code STATE_CHANGED_AT} is also the token of the claim: the success or failure of the
  * handlers only changes the row while it still carries the token they were granted, so an
- * instance that outlived the lease leaves the claim of the taker-over alone.
+ * instance that outlived the lease leaves the claim of the taker-over alone. A
+ * {@link #renew renewal} moves {@code STATE_CHANGED_AT} forward the same way a take-over
+ * does, fenced by the current token, and the new value is the token of the renewed claim.
  *
  * <p>
  * SETs are forgotten after the retention time: the store deletes them when it is written
@@ -50,7 +52,7 @@ public class JdbcSsfJtiDedupStore implements SsfJtiDedupStore, JdbcSsfExpiringSt
 
     private final String select;
 
-    private final String takeOver;
+    private final String moveClaim;
 
     private final String markProcessed;
 
@@ -79,11 +81,12 @@ public class JdbcSsfJtiDedupStore implements SsfJtiDedupStore, JdbcSsfExpiringSt
         this.jdbc = jdbc;
         this.insert = "INSERT INTO " + this.table + " (ISSUER, JTI, STATE, STATE_CHANGED_AT) VALUES (?, ?, ?, ?)";
         this.select = "SELECT STATE, STATE_CHANGED_AT FROM " + this.table + " WHERE ISSUER = ? AND JTI = ?";
-        this.takeOver = "UPDATE " + this.table + " SET STATE_CHANGED_AT = ? WHERE ISSUER = ? AND JTI = ? AND STATE = '"
+        // a take-over and a renewal both move the claim's token forward, fenced by the
+        // current one
+        this.moveClaim = "UPDATE " + this.table + " SET STATE_CHANGED_AT = ? WHERE ISSUER = ? AND JTI = ? AND STATE = '"
                 + IN_PROGRESS + "' AND STATE_CHANGED_AT = ?";
         // processed and forget are fenced by the claim's token, the STATE_CHANGED_AT of
-        // the
-        // claim
+        // the claim
         this.markProcessed = "UPDATE " + this.table + " SET STATE = '" + PROCESSED
                 + "', STATE_CHANGED_AT = ? WHERE ISSUER = ? AND JTI = ? AND STATE = '" + IN_PROGRESS
                 + "' AND STATE_CHANGED_AT = ?";
@@ -156,7 +159,7 @@ public class JdbcSsfJtiDedupStore implements SsfJtiDedupStore, JdbcSsfExpiringSt
                 // STATE_CHANGED_AT is the token of the new claim; the old holder's token
                 // no
                 // longer matches, so it can neither complete nor forget this claim.
-                int taken = this.jdbc.update(this.takeOver, token, eventToken.iss(), eventToken.jti(), row.since());
+                int taken = this.jdbc.update(this.moveClaim, token, eventToken.iss(), eventToken.jti(), row.since());
                 return (taken == 1) ? Claim.granted(token) : Claim.inProgress();
             }
             return Claim.inProgress();
@@ -187,6 +190,16 @@ public class JdbcSsfJtiDedupStore implements SsfJtiDedupStore, JdbcSsfExpiringSt
     public void forget(SsfEventToken eventToken, Claim claim) {
         SsfAssert.notNull(claim, "claim must not be null");
         this.jdbc.update(this.delete, eventToken.iss(), eventToken.jti(), claim.token());
+    }
+
+    @Override
+    public Claim renew(SsfEventToken eventToken, Claim claim) {
+        SsfAssert.notNull(claim, "claim must not be null");
+        // the new STATE_CHANGED_AT is the token of the renewed claim: later than the old
+        // one even within the same millisecond, so that the row is seen as changed
+        long token = Math.max(this.clock.instant().toEpochMilli(), claim.token() + 1);
+        int renewed = this.jdbc.update(this.moveClaim, token, eventToken.iss(), eventToken.jti(), claim.token());
+        return (renewed == 1) ? Claim.granted(token) : null;
     }
 
     private List<Row> select(SsfEventToken eventToken) {

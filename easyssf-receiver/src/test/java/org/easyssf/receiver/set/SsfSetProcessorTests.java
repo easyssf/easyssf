@@ -1,10 +1,13 @@
 package org.easyssf.receiver.set;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.easyssf.core.event.SsfEventToken;
 import org.easyssf.core.event.SsfEventTypes;
@@ -112,6 +115,46 @@ class SsfSetProcessorTests {
     }
 
     @Test
+    void renewedClaimKeepsTheSetWhileAHandlerOutlivesTheLease() throws Exception {
+        InMemorySsfJtiDedupStore store = new InMemorySsfJtiDedupStore(10);
+        store.setLease(Duration.ofMillis(500));
+        SlowHandler slow = new SlowHandler();
+        try (SsfSetProcessor processor = new SsfSetProcessor(this.verifier, store, List.of(slow))) {
+            processor.setClaimRenewal(Duration.ofMillis(100));
+            Thread processing = Thread.ofVirtual().start(() -> processor.process("jti-1"));
+            assertThat(slow.handling.await(10, TimeUnit.SECONDS)).isTrue();
+
+            // twice the lease later the claim is still held, thanks to the renewals
+            Thread.sleep(1000);
+            assertThat(store.claim(this.verifier.verify("jti-1"))).isEqualTo(SsfJtiDedupStore.Claim.inProgress());
+
+            slow.release.countDown();
+            processing.join(Duration.ofSeconds(10));
+            assertThat(store.claim(this.verifier.verify("jti-1"))).isEqualTo(SsfJtiDedupStore.Claim.processed());
+        }
+    }
+
+    @Test
+    void withoutRenewalAHandlerThatOutlivesTheLeaseLosesTheSet() throws Exception {
+        InMemorySsfJtiDedupStore store = new InMemorySsfJtiDedupStore(10);
+        store.setLease(Duration.ofMillis(200));
+        SlowHandler slow = new SlowHandler();
+        SsfSetProcessor processor = new SsfSetProcessor(this.verifier, store, List.of(slow));
+        Thread processing = Thread.ofVirtual().start(() -> processor.process("jti-1"));
+        assertThat(slow.handling.await(10, TimeUnit.SECONDS)).isTrue();
+
+        // the lease passed: the SET is taken over
+        Thread.sleep(400);
+        SsfJtiDedupStore.Claim taker = store.claim(this.verifier.verify("jti-1"));
+        assertThat(taker.isNew()).isTrue();
+
+        // the late success is not recorded, the SET belongs to the taker
+        slow.release.countDown();
+        processing.join(Duration.ofSeconds(10));
+        assertThat(store.claim(this.verifier.verify("jti-1"))).isEqualTo(SsfJtiDedupStore.Claim.inProgress());
+    }
+
+    @Test
     void dedupStoreEvictsOldestEntryWhenFull() {
         InMemorySsfJtiDedupStore store = new InMemorySsfJtiDedupStore(2);
         assertThat(store.seenBefore(this.verifier.verify("jti-1"))).isFalse();
@@ -154,6 +197,28 @@ class SsfSetProcessorTests {
 
     private SsfSetProcessor processor(SsfEventHandler... handlers) {
         return new SsfSetProcessor(this.verifier, new InMemorySsfJtiDedupStore(100), List.of(handlers));
+    }
+
+    /**
+     * A handler that waits until the test releases it.
+     */
+    private static final class SlowHandler implements SsfEventHandler {
+
+        private final CountDownLatch handling = new CountDownLatch(1);
+
+        private final CountDownLatch release = new CountDownLatch(1);
+
+        @Override
+        public void handle(org.easyssf.receiver.event.SsfEventContext eventContext) {
+            this.handling.countDown();
+            try {
+                assertThat(this.release.await(10, TimeUnit.SECONDS)).isTrue();
+            }
+            catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
     }
 
 }

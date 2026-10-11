@@ -411,10 +411,11 @@ public class SsfReceiverProperties extends SsfTransmitterProperties {
         private Duration retention = Duration.ofDays(7);
 
         /**
-         * How long a SET counts as being handled by the instance that claimed it. Another
-         * instance that receives the SET in that time leaves it for a redelivery; after
-         * it, the claim counts as abandoned by a crashed instance and the SET is handled
-         * again. Longer than the longest event handler.
+         * How long a SET counts as being handled by the instance that claimed it without
+         * renewing the claim, which it does every third of this time while its handlers
+         * run. Another instance that receives the SET in that time leaves it for a
+         * redelivery; after it, the claim counts as abandoned by a crashed instance and
+         * the SET is handled again.
          */
         private Duration lease = Duration.ofSeconds(60);
 
@@ -468,10 +469,11 @@ public class SsfReceiverProperties extends SsfTransmitterProperties {
         private List<String> eventTypes = new ArrayList<>(List.of("CaepSessionRevoked"));
 
         /**
-         * How long the in-memory store remembers a revocation. Must be at least the
-         * maximum access token lifetime.
+         * How long a revocation is remembered. At least the maximum lifetime of the
+         * tokens it guards: a revoked token whose revocation was forgotten before it
+         * expired is valid again.
          */
-        private Duration revocationTtl = Duration.ofHours(1);
+        private Duration revocationTtl = Duration.ofHours(24);
 
         public boolean isEnabled() {
             return this.enabled;

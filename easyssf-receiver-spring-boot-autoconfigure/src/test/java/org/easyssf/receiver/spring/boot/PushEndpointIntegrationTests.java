@@ -41,6 +41,7 @@ class PushEndpointIntegrationTests {
     @DynamicPropertySource
     static void transmitterProperties(DynamicPropertyRegistry registry) {
         registry.add("easyssf.receiver.transmitter-issuer", transmitter::issuer);
+        registry.add("easyssf.receiver.expected-audience", () -> TestTransmitter.AUDIENCE);
     }
 
     @AfterAll

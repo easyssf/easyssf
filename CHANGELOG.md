@@ -6,8 +6,36 @@ The notable changes of every release. The section of a version is the text of it
 
 ## [Unreleased]
 
+Two defaults change for receivers that accepted too much, found by the review of the .NET
+port: a receiver has to know the audience of its SETs, and a revocation is remembered for a
+day. A receiver that configures neither an audience nor a stream has to say so.
+
+### Added
+
+- `SsfJtiDedupStore.renew` extends the claim of a SET whose handlers are still running, and
+  `SsfSetProcessor.setClaimRenewal` renews it at an interval; the in-memory and the JDBC store
+  implement it, a custom store inherits a renewal that changes nothing. The Spring Boot starter
+  renews every third of `easyssf.receiver.dedup.lease`, so the lease no longer has to be longer than
+  the longest handler; the Quarkus extension can wire the same. `SsfSetProcessor` is `AutoCloseable`
+  now, `close()` stops the renewal thread.
+- `easyssf.receiver.set-validation.allow-any-audience` accepts SETs whatever their `aud` when the
+  receiver has no way to know the audience, for a transmitter that sends none. A property the Quarkus
+  extension mirrors.
+
 ### Changed
 
+- **A receiver has to know the audience of its SETs.** Without `easyssf.receiver.expected-audience`
+  and without a stream it registers or looks up (`stream.management=receiver`, `stream.id`) the
+  Spring Boot receiver no longer starts with a warning but fails, naming the three ways out: the
+  property, the stream, or `set-validation.allow-any-audience=true`. Where the audience comes from the
+  stream, a SET that arrives before the stream is known is no longer accepted unchecked: a pushed one
+  is answered with `503`, a polled one left unacknowledged, and the transmitter delivers it again. A
+  stream without `aud` rejects SETs as `invalid_audience` unless the option is set.
+  `NimbusSsfSetVerifier` keeps accepting any audience when none is configured, RFC 8417 only
+  recommends `aud`; a receiver built by hand decides.
+- `easyssf.receiver.resource-server.revocation-ttl` defaults to `24h` instead of `1h`: with the old
+  default a revoked access token of a realm with longer-lived tokens was valid again after an hour.
+  The TTL has to be at least the maximum lifetime of the tokens it guards.
 - The conformance tests run `release-v5.3.2` of the OpenID conformance suite, the first release with
   the SSF receiver tests as they are on the suite's master, pinned by digest in `ConformanceSettings`
   of `easyssf-test-conformance` instead of the suite's moving `latest` build. The `Conformance`

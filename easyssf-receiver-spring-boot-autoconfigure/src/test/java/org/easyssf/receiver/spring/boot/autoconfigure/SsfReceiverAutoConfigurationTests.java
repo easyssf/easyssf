@@ -85,7 +85,8 @@ class SsfReceiverAutoConfigurationTests {
         .withConfiguration(
                 AutoConfigurations.of(DispatcherServletAutoConfiguration.class, WebMvcAutoConfiguration.class,
                         SecurityAutoConfiguration.class, ServletWebSecurityAutoConfiguration.class))
-        .withPropertyValues("easyssf.receiver.transmitter-issuer=https://idp.example/realms/test");
+        .withPropertyValues("easyssf.receiver.transmitter-issuer=https://idp.example/realms/test",
+                "easyssf.receiver.expected-audience=https://receiver.example");
 
     /**
      * Without the default transmitter.
@@ -137,7 +138,9 @@ class SsfReceiverAutoConfigurationTests {
     void namedTransmittersWorkWithoutTheDefaultOne() {
         this.namedOnlyContextRunner
             .withPropertyValues("easyssf.receiver.transmitters.a.transmitter-issuer=https://a.example/realms/test",
+                    "easyssf.receiver.transmitters.a.expected-audience=https://receiver.example",
                     "easyssf.receiver.transmitters.b.transmitter-issuer=https://b.example/realms/test",
+                    "easyssf.receiver.transmitters.b.expected-audience=https://receiver.example",
                     "easyssf.receiver.transmitters.b.delivery-method=poll",
                     "easyssf.receiver.transmitters.b.poll.endpoint-url=https://b.example/realms/test/poll")
             .run((context) -> {
@@ -160,7 +163,8 @@ class SsfReceiverAutoConfigurationTests {
     void transmitterCustomizersApplyToEveryTransmitter() {
         this.webContextRunner
             .withPropertyValues("easyssf.receiver.transmitter-issuer=https://idp.example/realms/test",
-                    "easyssf.receiver.transmitters.b.transmitter-issuer=https://b.example/realms/test")
+                    "easyssf.receiver.transmitters.b.transmitter-issuer=https://b.example/realms/test",
+                    "easyssf.receiver.transmitters.b.expected-audience=https://receiver.example")
             .withBean(SsfTransmitterCustomizer.class,
                     () -> (builder) -> builder.pushAuthorizationHeader("Bearer " + builder.name()))
             .run((context) -> {
@@ -186,7 +190,8 @@ class SsfReceiverAutoConfigurationTests {
     void rejectsTwoTransmittersWithTheSameIssuer() {
         this.webContextRunner
             .withPropertyValues("easyssf.receiver.transmitter-issuer=https://idp.example/realms/test",
-                    "easyssf.receiver.transmitters.twin.transmitter-issuer=https://idp.example/realms/test")
+                    "easyssf.receiver.transmitters.twin.transmitter-issuer=https://idp.example/realms/test",
+                    "easyssf.receiver.transmitters.twin.expected-audience=https://receiver.example")
             .run((context) -> assertThat(context).hasFailed()
                 .getFailure()
                 .rootCause()
@@ -301,6 +306,44 @@ class SsfReceiverAutoConfigurationTests {
     }
 
     @Test
+    void failsWhenTheAudienceOfTheSetsCannotBeKnown() {
+        this.namedOnlyContextRunner
+            .withPropertyValues("easyssf.receiver.transmitter-issuer=https://idp.example/realms/test")
+            .run((context) -> {
+                assertThat(context).hasFailed();
+                assertThat(context.getStartupFailure()).rootCause()
+                    .isInstanceOf(InvalidConfigurationPropertyValueException.class)
+                    .hasMessageContaining("easyssf.receiver.expected-audience")
+                    .hasMessageContaining("easyssf.receiver.stream.management=receiver")
+                    .hasMessageContaining("easyssf.receiver.stream.id")
+                    .hasMessageContaining("easyssf.receiver.set-validation.allow-any-audience");
+            });
+        this.namedOnlyContextRunner
+            .withPropertyValues("easyssf.receiver.transmitters.a.transmitter-issuer=https://a.example/realms/test")
+            .run((context) -> {
+                assertThat(context).hasFailed();
+                assertThat(context.getStartupFailure()).rootCause()
+                    .hasMessageContaining("easyssf.receiver.transmitters.a.expected-audience");
+            });
+    }
+
+    @Test
+    void startsWhenTheAudienceOfTheSetsIsConfiguredOrToldByTheStreamOrNotRequired() {
+        WebApplicationContextRunner runner = this.namedOnlyContextRunner
+            .withPropertyValues("easyssf.receiver.transmitter-issuer=https://idp.example/realms/test");
+        runner.withPropertyValues("easyssf.receiver.expected-audience=https://receiver.example")
+            .run((context) -> assertThat(context).hasNotFailed());
+        runner.withPropertyValues("easyssf.receiver.stream.id=stream-1")
+            .run((context) -> assertThat(context).hasNotFailed());
+        runner
+            .withPropertyValues("easyssf.receiver.stream.management=receiver",
+                    "easyssf.receiver.push.delivery-endpoint-url=https://receiver.example/ssf/push")
+            .run((context) -> assertThat(context).hasNotFailed());
+        runner.withPropertyValues("easyssf.receiver.set-validation.allow-any-audience=true")
+            .run((context) -> assertThat(context).hasNotFailed());
+    }
+
+    @Test
     void failsWithInvalidPushEndpointPath() {
         this.webContextRunner.withPropertyValues("easyssf.receiver.push.endpoint-path=ssf/push").run((context) -> {
             assertThat(context).hasFailed();
@@ -324,7 +367,8 @@ class SsfReceiverAutoConfigurationTests {
     @Test
     void nonWebApplicationGetsNoPushEndpoint() {
         new ApplicationContextRunner().withConfiguration(SSF_RECEIVER)
-            .withPropertyValues("easyssf.receiver.transmitter-issuer=https://idp.example/realms/test")
+            .withPropertyValues("easyssf.receiver.transmitter-issuer=https://idp.example/realms/test",
+                    "easyssf.receiver.expected-audience=https://receiver.example")
             .run((context) -> {
                 assertThat(context).hasSingleBean(SsfSetProcessor.class);
                 assertThat(context).doesNotHaveBean(SsfPushEndpoint.class);

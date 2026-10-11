@@ -278,6 +278,47 @@ abstract class AbstractJdbcSharedReceiversTests {
     }
 
     @Test
+    void handlerThatOutlivesTheLeaseKeepsTheSetWhenTheClaimIsRenewed() throws Exception {
+        Receiver a = receiver();
+        a.processor.setClaimRenewal(Duration.ofMillis(100));
+        Receiver b = receiver();
+        String jti = queue("session-1");
+        CountDownLatch aIsHandling = new CountDownLatch(1);
+        CountDownLatch bHasPolled = new CountDownLatch(1);
+        a.afterHandling = () -> {
+            aIsHandling.countDown();
+            try {
+                assertThat(bHasPolled.await(10, TimeUnit.SECONDS)).isTrue();
+            }
+            catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
+        };
+        Thread aPolls = Thread.ofVirtual().start(a.poller::pollNow);
+        try {
+            assertThat(aIsHandling.await(10, TimeUnit.SECONDS)).isTrue();
+
+            // the lease passes while a is still on the SET, but a renews its claim
+            this.clock.advance(Duration.ofSeconds(61));
+            Thread.sleep(500);
+            assertThat(b.poller.pollNow()).isEqualTo(1);
+            assertThat(b.handled).isEmpty();
+            assertThat(this.transmitter.acknowledgedSets()).isEmpty();
+            assertThat(state(jti)).isEqualTo("IN_PROGRESS");
+
+            // a finishes: its success counts, with the renewed claim
+            bHasPolled.countDown();
+            aPolls.join(Duration.ofSeconds(10));
+            assertThat(a.handled).containsExactly(jti);
+            assertThat(this.transmitter.acknowledgedSets()).containsExactly(jti);
+            assertThat(state(jti)).isEqualTo("PROCESSED");
+        }
+        finally {
+            a.processor.close();
+        }
+    }
+
+    @Test
     void setClaimedByAnInstanceThatDiedBeforeItsHandlerRanIsHandledAfterTheLease() {
         Receiver b = receiver(dedupStore());
         String jti = queue("session-1");
@@ -365,9 +406,9 @@ abstract class AbstractJdbcSharedReceiversTests {
             receiver.keys.add(eventContext.idempotencyKey());
             receiver.afterHandling.run();
         };
-        SsfSetProcessor processor = new SsfSetProcessor(verifier, dedupStore, List.of(handler));
+        receiver.processor = new SsfSetProcessor(verifier, dedupStore, List.of(handler));
         receiver.poller = new SsfPoller(http, () -> TestTransmitter.ACCESS_TOKEN,
-                () -> URI.create(this.transmitter.pollUri()), processor);
+                () -> URI.create(this.transmitter.pollUri()), receiver.processor);
         receiver.poller.setAckStore(this.ackStore);
         receiver.poller.setTransmitter(this.transmitter.issuer());
         receiver.poller.setFlushOnStop(false);
@@ -395,6 +436,8 @@ abstract class AbstractJdbcSharedReceiversTests {
      * One instance of the application: its poller and what its handler saw.
      */
     private static final class Receiver {
+
+        private SsfSetProcessor processor;
 
         private SsfPoller poller;
 

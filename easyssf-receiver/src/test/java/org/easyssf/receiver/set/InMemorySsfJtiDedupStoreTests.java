@@ -80,6 +80,27 @@ class InMemorySsfJtiDedupStoreTests {
     }
 
     @Test
+    void renewedClaimOutlivesTheLease() {
+        this.store.setLease(Duration.ofSeconds(30));
+        Claim claim = this.store.claim(set("jti-1"));
+        this.clock.advance(Duration.ofSeconds(20));
+        assertThat(this.store.renew(set("jti-1"), claim)).isEqualTo(claim);
+        // 40 seconds after the claim, 20 after the renewal: still held
+        this.clock.advance(Duration.ofSeconds(20));
+        assertThat(this.store.claim(set("jti-1"))).isEqualTo(Claim.inProgress());
+        // 30 seconds after the renewal: abandoned
+        this.clock.advance(Duration.ofSeconds(10));
+        Claim taker = this.store.claim(set("jti-1"));
+        assertThat(taker.isNew()).isTrue();
+        // the late holder can neither renew nor complete the claim taken over from it
+        assertThat(this.store.renew(set("jti-1"), claim)).isNull();
+        this.store.processed(set("jti-1"), claim);
+        assertThat(this.store.claim(set("jti-1"))).isEqualTo(Claim.inProgress());
+        this.store.processed(set("jti-1"), taker);
+        assertThat(this.store.renew(set("jti-1"), taker)).isNull();
+    }
+
+    @Test
     void successOfAnEvictedClaimIsRecorded() {
         InMemorySsfJtiDedupStore small = new InMemorySsfJtiDedupStore(1);
         Claim claim = small.claim(set("jti-1"));

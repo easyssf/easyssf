@@ -21,9 +21,11 @@ import org.easyssf.core.support.SsfAssert;
  *
  * <p>
  * A granted claim carries a {@link Claim#token() token} that fences it:
- * {@link #processed} and {@link #forget} only act on the claim with that token. An
- * instance whose handlers outlived the lease therefore neither completes nor deletes the
- * claim of the instance that took the SET over; the SET belongs to the new holder.
+ * {@link #processed}, {@link #forget} and {@link #renew} only act on the claim with that
+ * token. An instance whose handlers outlived the lease therefore neither completes nor
+ * deletes the claim of the instance that took the SET over; the SET belongs to the new
+ * holder. An instance whose handlers may run longer than the lease {@link #renew renews}
+ * its claim meanwhile, so that only a crashed instance loses a SET to another.
  */
 public interface SsfJtiDedupStore {
 
@@ -121,6 +123,21 @@ public interface SsfJtiDedupStore {
      * @param claim the claim {@link #claim} granted for the SET
      */
     void forget(SsfEventToken eventToken, Claim claim);
+
+    /**
+     * Extends the claim of a SET whose handlers are still running: its age starts over,
+     * so it does not count as abandoned after the lease. Does nothing and returns
+     * {@code null} if the claim was taken over meanwhile, the SET then belongs to the
+     * instance that took it over. A store that does not renew returns the claim as it is,
+     * which leaves the lease as the bound for the handlers.
+     * @param claim the claim {@link #claim} granted for the SET, or the one the last
+     * renewal returned
+     * @return the claim to use from now on, as a store may give a renewed claim a new
+     * token; {@code null} if the claim was taken over
+     */
+    default Claim renew(SsfEventToken eventToken, Claim claim) {
+        return claim;
+    }
 
     /**
      * Claims the SET and tells whether it was known before, as processed or in progress.
