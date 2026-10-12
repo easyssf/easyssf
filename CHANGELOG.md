@@ -6,9 +6,17 @@ The notable changes of every release. The section of a version is the text of it
 
 ## [Unreleased]
 
-Two defaults change for receivers that accepted too much, found by the review of the .NET
-port: a receiver has to know the audience of its SETs, and a revocation is remembered for a
-day. A receiver that configures neither an audience nor a stream has to say so.
+## [0.6.0] - 2026-10-12
+
+A receiver has to know the audience of its SETs. A Spring Boot receiver that configured
+neither `expected-audience` nor a stream of its own accepted SETs the transmitter issued for
+other receivers; it no longer starts until it names an audience, a stream, or
+`set-validation.allow-any-audience`. Two more lessons of the .NET port: revocations are
+remembered for a day instead of an hour, and a handler that runs longer than the dedup
+lease keeps its SET, as the claim is renewed meanwhile (new API: SsfJtiDedupStore.renew,
+SsfSetProcessor.setClaimRenewal). The conformance tests run release 5.3.2 of the OpenID
+conformance suite, the first with the complete SSF receiver tests. The Quarkus extension
+mirrors the new property, the TTL default and the claim renewal when it adopts this release.
 
 ### Added
 
@@ -198,7 +206,8 @@ Java library and as a Spring Boot 4.1 starter.
 - The framework-free modules are Java modules; every artifact is signed, carries a CycloneDX
   SBOM and a self-contained POM.
 
-[Unreleased]: https://github.com/easyssf/easyssf/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/easyssf/easyssf/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/easyssf/easyssf/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/easyssf/easyssf/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/easyssf/easyssf/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/easyssf/easyssf/compare/v0.2.0...v0.3.0
