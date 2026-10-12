@@ -199,13 +199,25 @@ them by `eventContext.idempotencyKey()`, the issuer and `jti` of the SET.
 its `claims()`. The shortcuts `subject()`, `sessionId()`, `email()` and `opaqueId()` cover the common
 cases.
 
-Event types are identified by their URIs; the aliases (`CaepSessionRevoked`, ...) are a convenience
-of easyssf, use the URIs where you persist event types. Your own aliases, for vendor specific event
-types, are registered with `SsfEventTypes.registerAlias` (the starter has the property
-`easyssf.receiver.event-aliases` for it) and work wherever
-an event type is named; they cannot redefine a built-in alias. `eventTimestamp()` returns the
-`event_timestamp` of the event, which CAEP defines in seconds; a value that is clearly milliseconds is
-accepted as well, as some transmitters send that.
+`eventTimestamp()` returns the `event_timestamp` of the event, which CAEP defines in seconds; a value
+that is clearly milliseconds is accepted as well, as some transmitters send that.
+
+**Event types and aliases.** Event types are identified by their URIs; the aliases are a convenience
+of easyssf, the family and the event name in PascalCase: `CaepSessionRevoked` is
+`https://schemas.openid.net/secevent/caep/event-type/session-revoked`, `RiscAccountDisabled` and
+`ScimProvCreateFull` likewise. Both forms are accepted wherever an event type is named; use the URIs
+where you persist event types, and `SsfEventTypes` to go from one to the other. Vendor specific event
+types get aliases of your own, which then work in `events-requested`, the handler configuration and
+your handlers like the built-in ones; an alias cannot redefine a built-in or an earlier one:
+
+```java
+SsfEventTypes.registerAlias("AcmeLogin", "https://events.acme.example/login");
+```
+
+```yaml
+easyssf.receiver.event-aliases:
+  AcmeLogin: https://events.acme.example/login    # the Spring Boot starter registers them on startup
+```
 
 **Critical subject members**: a transmitter can declare in its metadata (`critical_subject_members`)
 members of a complex subject that a receiver must interpret. A SET whose subject has such a member
