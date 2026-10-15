@@ -23,12 +23,6 @@ In Spring Boot and Quarkus the handler is a bean and the transmitter one propert
 few lines wire the parts together, see [Getting started](#getting-started). The receiver is tested
 against the OpenID conformance suite's SSF and CAEP receiver test plans, with PUSH and POLL delivery.
 
-| | |
-|---|---|
-| **Status** | Experimental |
-| **Java** | 21+ |
-| **Group id** | `org.easyssf` |
-
 ## Integrations
 
 | | Artifact | |
@@ -37,8 +31,8 @@ against the OpenID conformance suite's SSF and CAEP receiver test plans, with PU
 | **Spring Boot** | `org.easyssf:easyssf-receiver-spring-boot-starter` | Auto-configuration for Spring Boot 4.1: properties, the push endpoint with Spring Security, resource server and OIDC client integration, JDBC stores, metrics and health. See the [README of the starter](easyssf-receiver-spring-boot-starter/README.md). |
 | **Quarkus** | `io.quarkiverse.openid-ssf:quarkus-openid-ssf-receiver` | The Quarkiverse extension, built on `easyssf-receiver` since its 0.2.0: configuration, CDI, a Vert.x push route, Dev UI, native images. Maintained in [its own repository](https://github.com/quarkiverse/quarkus-openid-ssf), documented at [docs.quarkiverse.io](https://docs.quarkiverse.io/quarkus-openid-ssf/dev/index.html). |
 
-The library and the starter are released together under the group id `org.easyssf`; the extension
-follows every easyssf release.
+The library and the starter are released together under the group id `org.easyssf` and require
+Java 21 or later; the extension follows every easyssf release.
 
 | Module | | Depends on |
 |---|---|---|
