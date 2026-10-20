@@ -55,7 +55,7 @@ reaches the receiver on the Docker host as `host.testcontainers.internal`.
 |---|---|---|
 | `cts.suite.image` / `CTS_SUITE_IMAGE` | `registry.gitlab.com/openid/conformance-suite@sha256:…` (`release-v5.3.2`, pinned by digest, see below) | the suite image |
 | `cts.suite.nginx-image` | `registry.gitlab.com/openid/conformance-suite/nginx@sha256:…` (`release-v5.3.2`, pinned by digest) | its nginx image |
-| `cts.suite.mongodb-image` | `mongo@sha256:…` (`9.0.2-noble`, pinned by digest; the suite itself runs 6.0.13 in production) | its MongoDB image |
+| `cts.suite.mongodb-image` | `mongo@sha256:…` (`9.0.4`, pinned by digest; the suite itself runs 6.0.13 in production, older 8.x and 9.x releases do not start on current Ubuntu kernels) | its MongoDB image |
 | `cts.suite.port` | `18443` | host port of the Testcontainers-started suite |
 | `cts.receiver.port` | `9444` | port of the receiver under test |
 | `cts.receiver.push-url` | `https://<host as seen from the suite>:<receiver port>/ssf/push` | the push URL the receiver registers |
