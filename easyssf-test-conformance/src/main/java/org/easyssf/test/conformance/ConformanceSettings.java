@@ -49,9 +49,13 @@ public final class ConformanceSettings {
     /**
      * The suite's own compose file runs MongoDB 6.0.13, as the suite does in production.
      * For the tests here a current release, with far fewer known vulnerabilities, works
-     * just as well: mongo:9.0.2-noble, pinned by digest like the suite images.
+     * just as well: mongo:9.0.4, pinned by digest like the suite images. Not older:
+     * MongoDB 8.0 and newer refuse to start on a Linux kernel from 6.19 up to 7.0.13 (a
+     * tcmalloc incompatibility, SERVER-121912), and before 9.0.4 they took Ubuntu's 7.0
+     * kernels, the ones of GitHub's runners since October 2026, for 7.0.0
+     * (SERVER-131779).
      */
-    static final String DEFAULT_SUITE_MONGODB_IMAGE = "mongo@sha256:61dd87ff554dc20386c63ebe1f7ede27314370ad5a7bf357c685fab424672158";
+    static final String DEFAULT_SUITE_MONGODB_IMAGE = "mongo@sha256:dc28ed5a9d0fc616903c3f463bb1e53b92b49f441721b91926e87d90bf957ce8";
 
     static final int DEFAULT_SUITE_PORT = 18443;
 
