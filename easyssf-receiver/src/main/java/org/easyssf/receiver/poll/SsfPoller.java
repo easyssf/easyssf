@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
 import org.easyssf.core.SsfDeliveryMethod;
@@ -130,6 +131,14 @@ public class SsfPoller {
     private final ReentrantLock lifecycle = new ReentrantLock();
 
     private final ReentrantLock pausing = new ReentrantLock();
+
+    /**
+     * What {@link SsfReceiverMetrics#pollerStarted} gets to read the pending
+     * acknowledgements: a field, not a fresh method reference per start, as Micrometer
+     * refers to the state of a gauge weakly and reports {@code NaN} once it is collected.
+     * The gauge lives as long as the poller.
+     */
+    private final IntSupplier pendingAckCount = this::getPendingAckCount;
 
     private final Condition wokenUp = this.pausing.newCondition();
 
@@ -289,7 +298,7 @@ public class SsfPoller {
                 return;
             }
             this.running = true;
-            this.metrics.pollerStarted(this.transmitter, this::getPendingAckCount);
+            this.metrics.pollerStarted(this.transmitter, this.pendingAckCount);
             Thread thread = this.threadFactory.newThread(this::run);
             SsfAssert.notNull(thread, "the thread factory returned no thread");
             this.thread = thread;

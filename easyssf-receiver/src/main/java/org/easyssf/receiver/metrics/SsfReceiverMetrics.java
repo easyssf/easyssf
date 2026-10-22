@@ -110,7 +110,9 @@ public interface SsfReceiverMetrics {
 
     /**
      * A poller started and tells how to read the number of acknowledgements and error
-     * reports it still owes its transmitter, for a gauge.
+     * reports it still owes its transmitter, for a gauge. The poller keeps a reference to
+     * {@code pendingAcks} for as long as it lives, so an implementation may hold it
+     * weakly, as Micrometer's gauges do, and the gauge goes away with the poller.
      * @param transmitter the issuer of the transmitter, {@code null} if unknown
      * @param pendingAcks reads the current number
      */

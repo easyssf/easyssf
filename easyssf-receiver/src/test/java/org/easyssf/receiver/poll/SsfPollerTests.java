@@ -1,5 +1,6 @@
 package org.easyssf.receiver.poll;
 
+import java.lang.ref.WeakReference;
 import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -312,6 +313,9 @@ class SsfPollerTests {
             .tag("transmitter", transmitter.issuer())
             .gauge()
             .value()).isZero();
+        // Micrometer refers to what a gauge reads weakly: it must survive a collection
+        // as long as the poller does, or it reads NaN (seen on the JDK 27 job of the CI)
+        collectGarbage();
         String jti = queue("session-1");
         this.afterHandling = () -> transmitter.setAvailable(false);
         assertThatIllegalStateException().isThrownBy(this.poller::pollNow);
@@ -391,6 +395,26 @@ class SsfPollerTests {
         assertThat(this.poller.pollNow()).isZero();
         assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(5));
         assertThat(transmitter.lastPollRequest()).containsEntry("returnImmediately", true);
+    }
+
+    /**
+     * Runs a garbage collection that clears weak references, provably:
+     * {@code System.gc()} is only a hint, so this allocates and asks until a weak
+     * reference of its own is cleared, and fails rather than letting a test pass without
+     * the collection.
+     */
+    private static void collectGarbage() {
+        WeakReference<Object> sentinel = new WeakReference<>(new Object());
+        List<byte[]> garbage = new ArrayList<>();
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+            // small arrays, as G1 allocates large ones outside the young generation
+            for (int i = 0; i < 256; i++) {
+                garbage.add(new byte[64 * 1024]);
+            }
+            garbage.clear();
+            System.gc();
+            assertThat(sentinel.get()).as("no garbage collection could be provoked").isNull();
+        });
     }
 
     private String queue(String sessionId) {
