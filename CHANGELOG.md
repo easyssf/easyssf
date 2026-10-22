@@ -8,6 +8,10 @@ The notable changes of every release. The section of a version is the text of it
 
 ### Fixed
 
+- The `easyssf.receiver.poll.pending-acks` gauge no longer turns `NaN` after a garbage collection.
+  Micrometer refers to what a gauge reads weakly, and the poller handed it a method reference
+  nothing else held on to; the poller now keeps that reference for as long as it lives, so the
+  gauge does too. The JDK 27 job of the CI collected it first.
 - The conformance tests start again on GitHub's current Ubuntu runners: their MongoDB is 9.0.4 now,
   pinned by digest. MongoDB 8.0 and newer exit at startup on a Linux kernel from 6.19 up to 7.0.13,
   and before 9.0.4 they took Ubuntu's 7.0 kernels for 7.0.0 (SERVER-121912, SERVER-131779), so the
