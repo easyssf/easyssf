@@ -72,7 +72,7 @@
         <!-- All modules build against the versions of the Spring Boot BOM, imported below.
              The plain modules (easyssf-core, easyssf-receiver) do not depend on Spring:
              the import only resolves versions. -->
-        <spring-boot.version>4.1.1</spring-boot.version>
+        <spring-boot.version>4.1.2</spring-boot.version>
         <!-- not managed by the Spring Boot BOM, Spring Security pulls it in transitively -->
         <nimbus-jose-jwt.version>10.9.1</nimbus-jose-jwt.version>
 
