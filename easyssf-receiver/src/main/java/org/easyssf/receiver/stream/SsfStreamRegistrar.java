@@ -75,6 +75,13 @@ public class SsfStreamRegistrar {
      */
     private final List<String> unadoptedStreams = new ArrayList<>();
 
+    /**
+     * Streams whose deletion is under way, marked under {@link #publication} before the
+     * lock is released for the call: a registration does not adopt one of them, a slow
+     * delete would otherwise remove the stream a registration that followed uses.
+     */
+    private final Set<String> deletingStreams = new HashSet<>();
+
     /** start() and stop() are idempotent and safe to call from any thread */
     private final ReentrantLock lifecycle = new ReentrantLock();
 
@@ -256,6 +263,7 @@ public class SsfStreamRegistrar {
                 this.publishedBy = null;
                 unadopted = List.copyOf(this.unadoptedStreams);
                 this.unadoptedStreams.clear();
+                this.deletingStreams.addAll(unadopted);
             }
             finally {
                 this.publication.unlock();
@@ -335,6 +343,7 @@ public class SsfStreamRegistrar {
                             orphans.add(streamId);
                         }
                     }
+                    this.deletingStreams.addAll(orphans);
                 }
                 finally {
                     this.publication.unlock();
@@ -409,7 +418,12 @@ public class SsfStreamRegistrar {
             return new Registration(this.streamClient.getStream(this.streamId), "Using", false);
         }
         List<SsfStreamConfiguration> streams = this.streamClient.getStreams();
-        SsfStreamConfiguration existing = streams.stream().filter(this::hasDesiredDelivery).findFirst().orElse(null);
+        Set<String> deleting = deletingStreams();
+        SsfStreamConfiguration existing = streams.stream()
+            .filter((stream) -> !deleting.contains(stream.streamId()))
+            .filter(this::hasDesiredDelivery)
+            .findFirst()
+            .orElse(null);
         if (existing != null && hasDesiredEvents(existing)) {
             return new Registration(existing, "Using existing", false);
         }
@@ -428,7 +442,7 @@ public class SsfStreamRegistrar {
         catch (SsfStreamException ex) {
             // the transmitter allows a single stream per receiver and it is configured
             // differently
-            if (ex.getStatusCode() != 409 || streams.size() != 1) {
+            if (ex.getStatusCode() != 409 || streams.size() != 1 || deleting.contains(streams.get(0).streamId())) {
                 throw ex;
             }
             return new Registration(this.streamClient.updateStream(streams.get(0).streamId(), changes()), "Updated",
@@ -449,6 +463,10 @@ public class SsfStreamRegistrar {
         // registration thread, which holds it already
         this.publication.lock();
         try {
+            if (this.deletingStreams.contains(stream.streamId())) {
+                // found by the look-up before a delete marked it: looked up again
+                throw new SsfStreamException("SSF stream " + stream.streamId() + " is being deleted", 0, null);
+            }
             this.receiverStream.setConfiguration(stream);
             this.publishedBy = Thread.currentThread();
             for (String unadopted : this.unadoptedStreams) {
@@ -457,6 +475,7 @@ public class SsfStreamRegistrar {
                 }
             }
             this.unadoptedStreams.clear();
+            this.deletingStreams.addAll(orphans);
         }
         finally {
             this.publication.unlock();
@@ -487,7 +506,31 @@ public class SsfStreamRegistrar {
         for (String streamId : orphans) {
             logger.info("Deleting SSF stream " + streamId + ", created by a registration that was stopped before it "
                     + "could publish it");
-            deleteQuietly(streamId);
+            try {
+                deleteQuietly(streamId);
+            }
+            finally {
+                this.publication.lock();
+                try {
+                    this.deletingStreams.remove(streamId);
+                }
+                finally {
+                    this.publication.unlock();
+                }
+            }
+        }
+    }
+
+    /**
+     * @return the streams a delete is under way for, to leave them out of a look-up
+     */
+    private Set<String> deletingStreams() {
+        this.publication.lock();
+        try {
+            return Set.copyOf(this.deletingStreams);
+        }
+        finally {
+            this.publication.unlock();
         }
     }
 
