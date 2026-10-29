@@ -286,11 +286,7 @@ public class SsfStreamRegistrar {
                     logger.warn("Could not delete SSF stream " + registeredStreamId + ": " + ex.getMessage());
                 }
             }
-            for (String streamId : unadopted) {
-                logger.info("Deleting SSF stream " + streamId + ", created by a registration that was stopped before "
-                        + "it could publish it");
-                deleteQuietly(streamId);
-            }
+            deleteOrphans(unadopted);
         }
         finally {
             this.lifecycle.unlock();
@@ -307,16 +303,19 @@ public class SsfStreamRegistrar {
         while (!thread.isInterrupted()) {
             try {
                 Registration registration = lookUp();
+                // decided under the lock, deleted after it: a slow transmitter must not
+                // hold up stop()
+                List<String> orphans = new ArrayList<>();
                 this.publication.lock();
                 try {
                     if (this.thread == thread) {
-                        publish(registration);
+                        orphans = publish(registration);
                     }
                     else if (this.thread == null) {
                         // stopped while the transmitter was called: the result is not
                         // published, and a stream created on the way is not left behind
                         if (registration.created() && this.deleteOnShutdown) {
-                            deleteQuietly(registration.stream().streamId());
+                            orphans.add(registration.stream().streamId());
                         }
                     }
                     else if (registration.created() && this.deleteOnShutdown) {
@@ -333,16 +332,14 @@ public class SsfStreamRegistrar {
                                     + " to the one that followed");
                         }
                         else if (!streamId.equals(this.receiverStream.getStreamId())) {
-                            logger.info("Deleting SSF stream " + streamId + ", created by a registration that was "
-                                    + "stopped before it could publish it; the receiver uses "
-                                    + this.receiverStream.getStreamId());
-                            deleteQuietly(streamId);
+                            orphans.add(streamId);
                         }
                     }
                 }
                 finally {
                     this.publication.unlock();
                 }
+                deleteOrphans(orphans);
                 return;
             }
             catch (SsfStreamIssuerMismatchException ex) {
@@ -397,7 +394,7 @@ public class SsfStreamRegistrar {
      */
     public SsfStreamConfiguration register() {
         Registration registration = lookUp();
-        publish(registration);
+        deleteOrphans(publish(registration));
         return registration.stream();
     }
 
@@ -439,21 +436,24 @@ public class SsfStreamRegistrar {
         }
     }
 
-    private void publish(Registration registration) {
+    /**
+     * Publishes the stream and tells the listeners.
+     * @return the streams of stopped registrations the caller deletes, once it no longer
+     * holds the {@link #publication} lock: those not adopted, as the receiver uses this
+     * one
+     */
+    private List<String> publish(Registration registration) {
         SsfStreamConfiguration stream = registration.stream();
+        List<String> orphans = new ArrayList<>();
         // under the lock for a direct call of register() as well; it is reentrant for the
         // registration thread, which holds it already
         this.publication.lock();
         try {
             this.receiverStream.setConfiguration(stream);
             this.publishedBy = Thread.currentThread();
-            // a stream a stopped registration created is adopted, if it is this one, or
-            // deleted, as the receiver uses this one
             for (String unadopted : this.unadoptedStreams) {
                 if (!unadopted.equals(stream.streamId())) {
-                    logger.info("Deleting SSF stream " + unadopted + ", created by a registration that was stopped "
-                            + "before it could publish it; the receiver uses " + stream.streamId());
-                    deleteQuietly(unadopted);
+                    orphans.add(unadopted);
                 }
             }
             this.unadoptedStreams.clear();
@@ -475,6 +475,19 @@ public class SsfStreamRegistrar {
                 logger.warn("A listener failed on the registration of SSF stream " + stream.streamId() + ": " + ex);
                 logger.debug("Cause of the failed listener", ex);
             }
+        }
+        return orphans;
+    }
+
+    /**
+     * Deletes streams that registrations created and the receiver does not use; called
+     * without the {@link #publication} lock, as the transmitter may be slow.
+     */
+    private void deleteOrphans(List<String> orphans) {
+        for (String streamId : orphans) {
+            logger.info("Deleting SSF stream " + streamId + ", created by a registration that was stopped before it "
+                    + "could publish it");
+            deleteQuietly(streamId);
         }
     }
 
