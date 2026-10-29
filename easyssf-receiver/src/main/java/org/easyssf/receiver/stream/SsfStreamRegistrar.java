@@ -1,6 +1,7 @@
 package org.easyssf.receiver.stream;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -38,9 +39,6 @@ public class SsfStreamRegistrar {
 
     private static final Duration MAX_RETRY_DELAY = Duration.ofSeconds(30);
 
-    /** how long stop() waits for a registration in flight */
-    static final Duration STOP_TIMEOUT = Duration.ofSeconds(5);
-
     private final SsfStreamClient streamClient;
 
     private final SsfReceiverStream receiverStream;
@@ -53,11 +51,29 @@ public class SsfStreamRegistrar {
 
     private Duration initialRetryDelay = Duration.ofSeconds(1);
 
+    /** how long stop() waits for a registration in flight; the tests shorten it */
+    private Duration stopTimeout = Duration.ofSeconds(5);
+
     /**
      * The thread of the current registration; a registration that finds another thread
      * here, or none, was stopped and publishes nothing
      */
     private volatile Thread thread;
+
+    /**
+     * The thread that published the stream the receiver has, {@code null} once stop()
+     * ran: tells a registration that outlived its stop() whether the one that followed
+     * has published yet. Guarded by {@link #publication}.
+     */
+    private Thread publishedBy;
+
+    /**
+     * Streams created by registrations that outlived their stop() while another
+     * registration had already started, and so could not publish them. The registration
+     * that follows adopts such a stream if it finds it, and deletes it once it publishes
+     * another; stop() deletes what is left. Guarded by {@link #publication}.
+     */
+    private final List<String> unadoptedStreams = new ArrayList<>();
 
     /** start() and stop() are idempotent and safe to call from any thread */
     private final ReentrantLock lifecycle = new ReentrantLock();
@@ -166,6 +182,16 @@ public class SsfStreamRegistrar {
         this.listeners.add(listener);
     }
 
+    /**
+     * How long {@link #stop()} waits for a registration in flight, 5 seconds by default.
+     * A registration that takes longer, because its HTTP client does not answer the
+     * interrupt, is left to finish on its own and publishes nothing.
+     */
+    void setStopTimeout(Duration stopTimeout) {
+        SsfAssert.isTrue(stopTimeout != null && stopTimeout.isPositive(), "stopTimeout must be positive");
+        this.stopTimeout = stopTimeout;
+    }
+
     public void setInitialRetryDelay(Duration initialRetryDelay) {
         SsfAssert.isTrue(initialRetryDelay != null && initialRetryDelay.isPositive(),
                 "initialRetryDelay must be positive");
@@ -218,12 +244,18 @@ public class SsfStreamRegistrar {
         this.lifecycle.lock();
         try {
             Thread thread;
+            boolean published;
+            List<String> unadopted;
             // a publication in progress completes first, so that the stream it publishes
             // is the one deleted below; none starts afterwards
             this.publication.lock();
             try {
                 thread = this.thread;
                 this.thread = null;
+                published = this.publishedBy != null;
+                this.publishedBy = null;
+                unadopted = List.copyOf(this.unadoptedStreams);
+                this.unadoptedStreams.clear();
             }
             finally {
                 this.publication.unlock();
@@ -234,7 +266,7 @@ public class SsfStreamRegistrar {
                     // a registration in flight ends with the interrupted call; one that
                     // completes regardless sees it is no longer current and publishes
                     // nothing
-                    if (!thread.join(STOP_TIMEOUT)) {
+                    if (!thread.join(this.stopTimeout)) {
                         logger.warn("The registration of the SSF stream is still in progress");
                     }
                 }
@@ -242,8 +274,10 @@ public class SsfStreamRegistrar {
                     Thread.currentThread().interrupt();
                 }
             }
+            // the receiver keeps the stream after stop(), so only one published since the
+            // last stop() is deleted, not one a previous stop() deleted already
             String registeredStreamId = this.receiverStream.getStreamId();
-            if (this.deleteOnShutdown && this.desiredStream != null && registeredStreamId != null) {
+            if (this.deleteOnShutdown && this.desiredStream != null && published && registeredStreamId != null) {
                 try {
                     this.streamClient.deleteStream(registeredStreamId);
                     logger.info("Deleted SSF stream " + registeredStreamId);
@@ -251,6 +285,11 @@ public class SsfStreamRegistrar {
                 catch (RuntimeException ex) {
                     logger.warn("Could not delete SSF stream " + registeredStreamId + ": " + ex.getMessage());
                 }
+            }
+            for (String streamId : unadopted) {
+                logger.info("Deleting SSF stream " + streamId + ", created by a registration that was stopped before "
+                        + "it could publish it");
+                deleteQuietly(streamId);
             }
         }
         finally {
@@ -280,25 +319,24 @@ public class SsfStreamRegistrar {
                             deleteQuietly(registration.stream().streamId());
                         }
                     }
-                    else {
+                    else if (registration.created() && this.deleteOnShutdown) {
                         // stopped and started again while the transmitter was called,
-                        // because stop() gave up waiting. The new registration adopts the
-                        // stream created on the way if it finds it, so the stream stays
-                        // unless the receiver already has another one: then it is an
-                        // orphan, created after the new registration looked. A new
-                        // registration that has not published yet may still adopt it,
-                        // or create one of its own and leave it behind.
+                        // because stop() gave up waiting: the registration that followed
+                        // adopts the stream created on the way if it finds it, so it is
+                        // not deleted on the spot. Once the other has published, the
+                        // stream it uses is known: any other is an orphan.
                         String streamId = registration.stream().streamId();
-                        String published = this.receiverStream.getStreamId();
-                        if (registration.created() && this.deleteOnShutdown && published != null
-                                && !published.equals(streamId)) {
-                            logger.debug("A registration that outlived its stop() deletes SSF stream " + streamId
-                                    + ", the one that followed uses " + published);
-                            deleteQuietly(streamId);
-                        }
-                        else {
+                        if (this.publishedBy != this.thread) {
+                            // the other has not published yet, it decides on publishing
+                            this.unadoptedStreams.add(streamId);
                             logger.debug("A registration that outlived its stop() leaves SSF stream " + streamId
                                     + " to the one that followed");
+                        }
+                        else if (!streamId.equals(this.receiverStream.getStreamId())) {
+                            logger.info("Deleting SSF stream " + streamId + ", created by a registration that was "
+                                    + "stopped before it could publish it; the receiver uses "
+                                    + this.receiverStream.getStreamId());
+                            deleteQuietly(streamId);
                         }
                     }
                 }
@@ -403,7 +441,26 @@ public class SsfStreamRegistrar {
 
     private void publish(Registration registration) {
         SsfStreamConfiguration stream = registration.stream();
-        this.receiverStream.setConfiguration(stream);
+        // under the lock for a direct call of register() as well; it is reentrant for the
+        // registration thread, which holds it already
+        this.publication.lock();
+        try {
+            this.receiverStream.setConfiguration(stream);
+            this.publishedBy = Thread.currentThread();
+            // a stream a stopped registration created is adopted, if it is this one, or
+            // deleted, as the receiver uses this one
+            for (String unadopted : this.unadoptedStreams) {
+                if (!unadopted.equals(stream.streamId())) {
+                    logger.info("Deleting SSF stream " + unadopted + ", created by a registration that was stopped "
+                            + "before it could publish it; the receiver uses " + stream.streamId());
+                    deleteQuietly(unadopted);
+                }
+            }
+            this.unadoptedStreams.clear();
+        }
+        finally {
+            this.publication.unlock();
+        }
         logger.info(registration.action() + " SSF stream " + stream.streamId() + " (delivery " + stream.deliveryMethod()
                 + " " + Objects.toString(stream.deliveryEndpointUrl(), "") + ", events "
                 + stream.eventsDelivered().stream().map(SsfEventTypes::aliasOf).toList() + ", audience "
