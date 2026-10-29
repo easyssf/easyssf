@@ -43,7 +43,8 @@ The notable changes of every release. The section of a version is the text of it
 - `SsfStreamRegistrar.start()` is idempotent and `stop()` waits for the registration thread to end
   before deleting the stream. A registration that completes after `stop()` publishes nothing and
   deletes a stream it created on the way if the registrar deletes on shutdown; if the registrar was
-  started again meanwhile, it leaves that stream to the new registration, which adopts it.
+  started again meanwhile, it leaves that stream to the new registration, which adopts it, and
+  deletes it only if the new registration already uses another one.
 - The `easyssf.receiver.poll.pending-acks` gauge no longer turns `NaN` after a garbage collection.
   Micrometer refers to what a gauge reads weakly, and the poller handed it a method reference
   nothing else held on to; the poller now keeps that reference for as long as it lives, so the

@@ -282,11 +282,24 @@ public class SsfStreamRegistrar {
                     }
                     else {
                         // stopped and started again while the transmitter was called,
-                        // because stop() gave up waiting: the new registration has found
-                        // the stream created on the way, or will, so it stays; the next
-                        // stop() deletes the stream the receiver has then
-                        logger.debug("A registration that outlived its stop() leaves SSF stream "
-                                + registration.stream().streamId() + " to the one that followed");
+                        // because stop() gave up waiting. The new registration adopts the
+                        // stream created on the way if it finds it, so the stream stays
+                        // unless the receiver already has another one: then it is an
+                        // orphan, created after the new registration looked. A new
+                        // registration that has not published yet may still adopt it,
+                        // or create one of its own and leave it behind.
+                        String streamId = registration.stream().streamId();
+                        String published = this.receiverStream.getStreamId();
+                        if (registration.created() && this.deleteOnShutdown && published != null
+                                && !published.equals(streamId)) {
+                            logger.debug("A registration that outlived its stop() deletes SSF stream " + streamId
+                                    + ", the one that followed uses " + published);
+                            deleteQuietly(streamId);
+                        }
+                        else {
+                            logger.debug("A registration that outlived its stop() leaves SSF stream " + streamId
+                                    + " to the one that followed");
+                        }
                     }
                 }
                 finally {
@@ -310,12 +323,19 @@ public class SsfStreamRegistrar {
                 return;
             }
             catch (RuntimeException ex) {
-                if (this.thread != thread) {
-                    // stopped meanwhile, possibly started again: not this registration's
-                    // error to report
-                    return;
+                // the check and the report go together under the lock, so that a
+                // registration stopped meanwhile, possibly replaced, reports no error of
+                // its own over the one that followed
+                this.publication.lock();
+                try {
+                    if (this.thread != thread) {
+                        return;
+                    }
+                    this.lastError = ex.getMessage();
                 }
-                this.lastError = ex.getMessage();
+                finally {
+                    this.publication.unlock();
+                }
                 logger.warn("Could not set up the SSF stream, trying again in " + delay.toSeconds() + "s: "
                         + ex.getMessage());
                 logger.debug("Cause of the failed SSF stream setup", ex);

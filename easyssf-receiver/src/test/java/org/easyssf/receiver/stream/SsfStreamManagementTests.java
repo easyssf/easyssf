@@ -369,6 +369,56 @@ class SsfStreamManagementTests {
     }
 
     @Test
+    void registrationThatOutlivesItsStopDeletesTheStreamItCreatedAfterTheNextOnePublished() throws Exception {
+        CountDownLatch discovered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        // the first registration stalls after it looked for streams and found none, and
+        // does not care for the interrupt of stop() either
+        SsfHttpClient stuck = (request) -> {
+            var response = http.execute(request);
+            if ("GET".equals(request.method()) && request.uri().getPath().endsWith("/streams")
+                    && discovered.getCount() > 0) {
+                discovered.countDown();
+                boolean released = false;
+                while (!released) {
+                    try {
+                        release.await();
+                        released = true;
+                    }
+                    catch (InterruptedException ex) {
+                        // keeps waiting
+                    }
+                }
+            }
+            return response;
+        };
+        SsfStreamClient client = new SsfStreamClient(stuck, () -> TestTransmitter.ACCESS_TOKEN,
+                new SsfTransmitterMetadataResolver(transmitter.issuer(), null, http));
+        SsfStreamRegistrar registrar = SsfStreamRegistrar.forManagedStream(client, this.receiverStream,
+                SsfStreamConfiguration.poll(List.of("CaepSessionRevoked"), null));
+        registrar.setDeleteOnShutdown(true);
+        registrar.start();
+        assertThat(discovered.await(5, TimeUnit.SECONDS)).isTrue();
+
+        // stop() gives the first registration up, the second finds no stream and creates
+        // one
+        registrar.stop();
+        registrar.start();
+        await().atMost(Duration.ofSeconds(5)).until(() -> this.receiverStream.getStreamId() != null);
+        String published = this.receiverStream.getStreamId();
+
+        // the first registration goes on to create a stream of its own, which nobody uses
+        release.countDown();
+        await().atMost(Duration.ofSeconds(5)).until(() -> transmitter.streams().size() == 1);
+        await().during(Duration.ofMillis(300)).until(() -> transmitter.streams().size() == 1);
+        assertThat(transmitter.streams().get(0).get("stream_id")).isEqualTo(published);
+        assertThat(this.receiverStream.getStreamId()).isEqualTo(published);
+
+        registrar.stop();
+        assertThat(transmitter.streams()).isEmpty();
+    }
+
+    @Test
     void obtainsNewAccessTokenWhenTheTransmitterRejectsTheCurrentOne() {
         SsfStreamClient client = new SsfStreamClient(http, this.tokenProvider,
                 new SsfTransmitterMetadataResolver(transmitter.issuer(), null, http));
