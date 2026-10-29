@@ -312,6 +312,63 @@ class SsfStreamManagementTests {
     }
 
     @Test
+    void registrationThatOutlivesItsStopLeavesTheStreamToTheRegistrationThatFollowed() throws Exception {
+        CountDownLatch created = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        // the transmitter created the stream, but the client does not return, and does
+        // not
+        // care for the interrupt of stop() either
+        SsfHttpClient stuck = (request) -> {
+            var response = http.execute(request);
+            if ("POST".equals(request.method()) && request.uri().getPath().endsWith("/streams")) {
+                created.countDown();
+                boolean released = false;
+                while (!released) {
+                    try {
+                        release.await();
+                        released = true;
+                    }
+                    catch (InterruptedException ex) {
+                        // keeps waiting
+                    }
+                }
+            }
+            return response;
+        };
+        SsfStreamClient client = new SsfStreamClient(stuck, () -> TestTransmitter.ACCESS_TOKEN,
+                new SsfTransmitterMetadataResolver(transmitter.issuer(), null, http));
+        List<SsfStreamConfiguration> registered = new ArrayList<>();
+        SsfStreamRegistrar registrar = SsfStreamRegistrar.forManagedStream(client, this.receiverStream,
+                SsfStreamConfiguration.poll(List.of("CaepSessionRevoked"), null));
+        registrar.setDeleteOnShutdown(true);
+        registrar.addListener(registered::add);
+        registrar.start();
+        assertThat(created.await(5, TimeUnit.SECONDS)).isTrue();
+        String streamId = (String) transmitter.streams().get(0).get("stream_id");
+
+        // stop() gives the first registration up after its timeout, start() begins a
+        // second
+        // one, which finds the stream the first created and adopts it
+        long stopping = System.nanoTime();
+        registrar.stop();
+        assertThat(Duration.ofNanos(System.nanoTime() - stopping))
+            .isGreaterThanOrEqualTo(SsfStreamRegistrar.STOP_TIMEOUT);
+        registrar.start();
+        await().atMost(Duration.ofSeconds(5)).until(() -> this.receiverStream.getStreamId() != null);
+        assertThat(this.receiverStream.getStreamId()).isEqualTo(streamId);
+
+        // the first registration returns at last: it neither publishes nor deletes the
+        // stream the second one uses
+        release.countDown();
+        await().during(Duration.ofMillis(300)).until(() -> transmitter.streams().size() == 1);
+        assertThat(registered).hasSize(1);
+        assertThat(registrar.getState()).isEqualTo(SsfStreamRegistrar.State.REGISTERED);
+
+        registrar.stop();
+        assertThat(transmitter.streams()).isEmpty();
+    }
+
+    @Test
     void obtainsNewAccessTokenWhenTheTransmitterRejectsTheCurrentOne() {
         SsfStreamClient client = new SsfStreamClient(http, this.tokenProvider,
                 new SsfTransmitterMetadataResolver(transmitter.issuer(), null, http));
