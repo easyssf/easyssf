@@ -11,6 +11,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.easyssf.core.SsfDeliveryMethod;
 import org.easyssf.core.event.SsfEventTypes;
@@ -540,6 +541,75 @@ class SsfStreamManagementTests {
         await().atMost(Duration.ofSeconds(5)).until(() -> transmitter.streams().size() == 1);
         assertThat(transmitter.streams().get(0).get("stream_id")).isEqualTo(published);
         assertThat(this.receiverStream.getStreamId()).isEqualTo(published);
+
+        registrar.stop();
+        assertThat(transmitter.streams()).isEmpty();
+    }
+
+    @Test
+    void streamWhoseDeletionIsUnderWayIsNotAdoptedByTheNextRegistration() throws Exception {
+        // the first registration stalls after it looked and found no stream; the second
+        // creates a stream and publishes it; the first then creates an orphan and deletes
+        // it,
+        // which the transmitter takes its time for; the registrar is restarted meanwhile
+        transmitter.setSeveralStreamsAllowed(true);
+        CountDownLatch discovered = new CountDownLatch(1);
+        CountDownLatch releaseDiscovery = new CountDownLatch(1);
+        AtomicReference<String> second = new AtomicReference<>();
+        AtomicReference<String> orphan = new AtomicReference<>();
+        CountDownLatch deleting = new CountDownLatch(1);
+        CountDownLatch releaseDelete = new CountDownLatch(1);
+        SsfHttpClient stuck = (request) -> {
+            if ("GET".equals(request.method()) && request.uri().getPath().endsWith("/streams")
+                    && discovered.getCount() > 0) {
+                var response = http.execute(request);
+                discovered.countDown();
+                awaitIgnoringInterrupts(releaseDiscovery);
+                return response;
+            }
+            // the delete of the orphan, the only stream deleted while the second is in
+            // use
+            if ("DELETE".equals(request.method()) && second.get() != null
+                    && !request.uri().getQuery().contains(second.get()) && deleting.getCount() > 0) {
+                orphan.set(request.uri().getQuery().replaceAll(".*stream_id=([^&]*).*", "$1"));
+                deleting.countDown();
+                awaitIgnoringInterrupts(releaseDelete);
+            }
+            return http.execute(request);
+        };
+        SsfStreamClient client = new SsfStreamClient(stuck, () -> TestTransmitter.ACCESS_TOKEN,
+                new SsfTransmitterMetadataResolver(transmitter.issuer(), null, http));
+        List<SsfStreamConfiguration> registered = new ArrayList<>();
+        SsfStreamRegistrar registrar = SsfStreamRegistrar.forManagedStream(client, this.receiverStream,
+                SsfStreamConfiguration.poll(List.of("CaepSessionRevoked"), null));
+        registrar.setDeleteOnShutdown(true);
+        registrar.setStopTimeout(STOP_TIMEOUT);
+        registrar.setInitialRetryDelay(Duration.ofMillis(50));
+        registrar.addListener(registered::add);
+        registrar.start();
+        assertThat(discovered.await(5, TimeUnit.SECONDS)).isTrue();
+        registrar.stop();
+        registrar.start();
+        await().atMost(Duration.ofSeconds(5)).until(() -> this.receiverStream.getStreamId() != null);
+        second.set(this.receiverStream.getStreamId());
+
+        // the first creates its stream, an orphan, and gets stuck deleting it
+        releaseDiscovery.countDown();
+        assertThat(deleting.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(transmitter.streams()).hasSize(2);
+
+        // restarted while the orphan still exists: the third registration finds it and
+        // must not adopt it, it creates a stream of its own instead
+        registrar.stop();
+        assertThat(transmitter.streams()).hasSize(1);
+        registrar.start();
+        await().atMost(Duration.ofSeconds(5)).until(() -> registered.size() == 2);
+        String third = this.receiverStream.getStreamId();
+        assertThat(third).isNotEqualTo(orphan.get()).isNotEqualTo(second.get());
+
+        releaseDelete.countDown();
+        await().atMost(Duration.ofSeconds(5)).until(() -> transmitter.streams().size() == 1);
+        assertThat(transmitter.streams().get(0).get("stream_id")).isEqualTo(third);
 
         registrar.stop();
         assertThat(transmitter.streams()).isEmpty();

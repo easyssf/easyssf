@@ -44,8 +44,9 @@ The notable changes of every release. The section of a version is the text of it
   before deleting the stream. A registration that completes after `stop()` publishes nothing and
   deletes a stream it created on the way if the registrar deletes on shutdown; if the registrar was
   started again meanwhile, it leaves that stream to the new registration, which adopts it if it finds
-  it and deletes it once it publishes another one. `stop()` deletes only a stream published since the
-  last `stop()`, not again the one that `stop()` deleted before.
+  it and deletes it once it publishes another one; a stream whose deletion is under way is not adopted.
+  `stop()` deletes only a stream published since the last `stop()`, not again the one that `stop()`
+  deleted before.
 - The `easyssf.receiver.poll.pending-acks` gauge no longer turns `NaN` after a garbage collection.
   Micrometer refers to what a gauge reads weakly, and the poller handed it a method reference
   nothing else held on to; the poller now keeps that reference for as long as it lives, so the
