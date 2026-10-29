@@ -6,8 +6,43 @@ The notable changes of every release. The section of a version is the text of it
 
 ## [Unreleased]
 
+### Security
+
+- A host name that merely starts with `127.`, such as `127.attacker.example`, counted as a loopback
+  address and was allowed to use plain `http` under the default URI policy. `SsfTransmitterUriPolicy`
+  now takes only `localhost` and names under it, IPv4 addresses in `127.0.0.0/8` and `::1` (also as
+  the IPv4-mapped `::ffff:127.0.0.1`) for loopback, the same rule as the Go library.
+- The poll endpoint is held to the URI policy of the transmitter's metadata endpoints before the
+  access token is sent to it, whether it was configured (`easyssf.receiver.poll.endpoint-url`, checked
+  at startup) or taken from the stream configuration the transmitter returned: `https`, or `http` on
+  loopback addresses only, unless `allow-insecure-http` is set. New API: `SsfPoller.setUriPolicy`,
+  which the Quarkus extension can wire to its insecure-http setting.
+- Response bodies the receiver reads from the transmitter (metadata, JWK Set, stream configurations,
+  poll responses) are bounded, 4 MiB by default; a larger response fails the call as if the
+  transmitter were unavailable instead of being buffered. New API: `JdkSsfHttpClient.setMaxResponseSize`
+  and `SsfHttpResponse.readBody` for other `SsfHttpClient` implementations, and the property
+  `easyssf.receiver.http.max-response-size` of the Spring Boot starter, which the Quarkus extension
+  can mirror.
+
+### Changed
+
+- `SsfStreamClient` checks the issuer of every stream configuration the transmitter returns, not only
+  of a created one: `getStream`, `getStreams`, `updateStream` and `replaceStream` throw
+  `SsfStreamIssuerMismatchException` as `createStream` did, as the SETs of a stream with another
+  issuer would not verify. `SsfStreamRegistrar` deletes a stream it created with the wrong issuer, as
+  before, and leaves an existing one alone; it fails without retrying either way.
+
 ### Fixed
 
+- A SET the poll response lists under a key other than its `jti` (RFC 8936, section 2.4) is reported
+  to the transmitter as `invalid_request` under that key instead of being handled and acknowledged
+  under a key that is not its own.
+- `SsfPoller.stop()` followed by `start()` while a handler was still running left the old polling
+  thread alive next to the new one once the handler returned; a polling thread now ends as soon as it
+  is no longer the poller's thread. `stop()` logs when the thread is still busy after five seconds.
+- `SsfStreamRegistrar.start()` is idempotent and `stop()` waits for the registration thread to end
+  before deleting the stream. A registration that completes after `stop()` publishes nothing and
+  deletes a stream it created on the way if the registrar deletes on shutdown.
 - The `easyssf.receiver.poll.pending-acks` gauge no longer turns `NaN` after a garbage collection.
   Micrometer refers to what a gauge reads weakly, and the poller handed it a method reference
   nothing else held on to; the poller now keeps that reference for as long as it lives, so the

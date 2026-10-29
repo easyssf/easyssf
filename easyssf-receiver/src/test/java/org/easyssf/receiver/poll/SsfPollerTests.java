@@ -16,6 +16,7 @@ import org.easyssf.receiver.set.NimbusSsfSetVerifier;
 import org.easyssf.receiver.set.SsfSetProcessor;
 import org.easyssf.receiver.transmitter.ClientCredentialsSsfTransmitterTokenProvider;
 import org.easyssf.receiver.transmitter.SsfTransmitterTokenProvider;
+import org.easyssf.receiver.transmitter.SsfTransmitterUriPolicy;
 import org.easyssf.test.TestTransmitter;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,6 +25,8 @@ import org.junit.jupiter.api.Test;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 import static org.awaitility.Awaitility.await;
 import static org.easyssf.core.event.SsfSubjectIdentifiers.opaque;
@@ -170,6 +173,45 @@ class SsfPollerTests {
             .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.map(String.class, Object.class))
             .containsEntry("err", "invalid_request");
         assertThat(counter("easyssf.receiver.sets", "delivery", "poll", "outcome", "invalid")).isEqualTo(1);
+    }
+
+    @Test
+    void reportsSetWhoseJtiDiffersFromTheKeyItIsListedUnderWithoutHandlingIt() {
+        var claims = transmitter.setClaims("CaepSessionRevoked", opaque("session-1")).build();
+        transmitter.queueSet("other-jti", transmitter.signSet(claims));
+        String valid = queue("session-2");
+
+        assertThat(this.poller.pollNow()).isEqualTo(2);
+
+        // the SET is not handled, and the error names the key so that the transmitter
+        // drops it
+        assertThat(this.handled).containsExactly(valid);
+        assertThat(transmitter.acknowledgedSets()).containsExactly(valid);
+        assertThat(transmitter.reportedErrors()).containsOnlyKeys("other-jti");
+        assertThat(transmitter.reportedErrors().get("other-jti"))
+            .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.map(String.class, Object.class))
+            .containsEntry("err", "invalid_request")
+            .hasEntrySatisfying("description",
+                    (description) -> assertThat(description.toString()).contains(claims.getJWTID())
+                        .contains("other-jti"));
+        assertThat(counter("easyssf.receiver.sets", "delivery", "poll", "outcome", "invalid")).isEqualTo(1);
+    }
+
+    @Test
+    void doesNotSendTheAccessTokenToAPollEndpointWithoutTls() {
+        SsfPoller insecure = poller(() -> URI.create("http://transmitter.example/poll"), TestTransmitter.ACCESS_TOKEN);
+        assertThatIllegalArgumentException().isThrownBy(insecure::pollNow)
+            .withMessageContaining("poll endpoint")
+            .withMessageContaining("must use https");
+        assertThat(transmitter.pollRequests()).isZero();
+
+        // the loopback transmitter of the tests passes, and so does any host with the
+        // insecure policy
+        assertThat(this.poller.pollNow()).isZero();
+        assertThat(transmitter.pollRequests()).isEqualTo(1);
+        insecure.setUriPolicy(SsfTransmitterUriPolicy.INSECURE);
+        assertThatExceptionOfType(IllegalStateException.class).isThrownBy(insecure::pollNow)
+            .withMessageContaining("Poll request to http://transmitter.example/poll failed");
     }
 
     @Test

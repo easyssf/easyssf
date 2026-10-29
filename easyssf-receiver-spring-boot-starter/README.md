@@ -186,7 +186,8 @@ easyssf:
 ```
 
 - The poll endpoint is taken from the stream (`stream.id` or a stream managed by the receiver), or set
-  it with `easyssf.receiver.poll.endpoint-url`.
+  it with `easyssf.receiver.poll.endpoint-url`. Either way it must use `https` (`http` on loopback
+  addresses only, or with `allow-insecure-http`), as the access token is sent to it.
 - A SET is acknowledged after it was handled. An invalid SET is reported to the transmitter (`setErrs`).
   A SET that could not be handled is neither acknowledged nor reported and is delivered again.
 - If more SETs are available than `poll.max-events`, they are fetched right away.
@@ -434,7 +435,7 @@ name, with its own status. Switch it off with `management.health.easyssf.enabled
 | `easyssf.receiver.transmitters.<name>.*` | | Further transmitters, see [Several transmitters](#several-transmitters): every property of a transmitter, from `transmitter-issuer` to `set-validation.*`, under its name. |
 | `easyssf.receiver.transmitter-metadata-url` | derived | By default `<host>/.well-known/ssf-configuration<issuer-path>` (SSF 1.0, section 7.2), falling back to `<issuer>/.well-known/ssf-configuration`. |
 | `easyssf.receiver.transmitter-jwks-url` | from metadata | Skips metadata discovery when set. |
-| `easyssf.receiver.allow-insecure-http` | `false` | Accepts `http` for the transmitter issuer and the endpoints it publishes on any host, with a warning on startup. For development only. |
+| `easyssf.receiver.allow-insecure-http` | `false` | Accepts `http` for the transmitter issuer, the endpoints it publishes and the poll endpoint on any host, with a warning on startup. For development only. |
 | `easyssf.receiver.expected-audience` | | Every SET must contain it in `aud`. Without it the audience of the stream the receiver registers or looks up (`stream.management=receiver`, `stream.id`) is required instead, once the stream is known. One of the two, or `set-validation.allow-any-audience`, is required: a receiver that cannot know the audience of its SETs does not start. |
 | `easyssf.receiver.delivery-method` | `push` | `push` or `poll`. |
 | `easyssf.receiver.understood-subject-members` | `user, session, device, application, tenant, org_unit, group` | The members of a complex subject the application interprets; a SET with a member the transmitter declared critical that is not listed is rejected. |
@@ -442,6 +443,7 @@ name, with its own status. Switch it off with `management.health.easyssf.enabled
 | `easyssf.receiver.http.use-rest-client` | `true` | Call the transmitter with the `RestClient` of the application if it has a `RestClient.Builder`. |
 | `easyssf.receiver.http.connect-timeout` / `read-timeout` | `5s` | Calls to the transmitter. Unset, `spring.http.clients.*` applies to the `RestClient` before the 5 seconds do. |
 | `easyssf.receiver.http.user-agent` | default of the HTTP client | `User-Agent` header for calls to the transmitter. |
+| `easyssf.receiver.http.max-response-size` | `4MB` | Largest response body accepted from the transmitter (metadata, JWK Set, stream configuration, poll response); a larger one fails the call. |
 | `easyssf.receiver.transmitter-access-token` | | Static access token for stream management and polling. |
 | `easyssf.receiver.oauth2.token-uri` | | Token endpoint for the client credentials grant. |
 | `easyssf.receiver.oauth2.client-id` / `client-secret` | | |
@@ -454,7 +456,7 @@ name, with its own status. Switch it off with `management.health.easyssf.enabled
 | `easyssf.receiver.stream.events-requested` | `CaepSessionRevoked`, `CaepCredentialChange` | For a stream managed by the receiver. |
 | `easyssf.receiver.stream.description` | | For a stream managed by the receiver. |
 | `easyssf.receiver.stream.delete-on-shutdown` | `false` | For a stream managed by the receiver. |
-| `easyssf.receiver.poll.endpoint-url` | from the stream | |
+| `easyssf.receiver.poll.endpoint-url` | from the stream | Held to the same `https` rule as the transmitter issuer. |
 | `easyssf.receiver.poll.auto-startup` | `true` | |
 | `easyssf.receiver.poll.interval` | `30s` | |
 | `easyssf.receiver.poll.initial-delay` | `1s` | |

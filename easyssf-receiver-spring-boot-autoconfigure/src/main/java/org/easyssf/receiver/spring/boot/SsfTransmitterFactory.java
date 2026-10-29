@@ -232,6 +232,7 @@ public final class SsfTransmitterFactory {
         JdkSsfHttpClient pollClient = new JdkSsfHttpClient(connectTimeout, poll.getLongPollingHold().plusSeconds(15));
         if (http != null) {
             pollClient.setUserAgent(http.getUserAgent());
+            pollClient.setMaxResponseSize(http.getMaxResponseSize().toBytes());
         }
         logger.info(prefix(name) + "poll.long-polling is on, the poller calls the transmitter with the JDK HTTP "
                 + "client rather than the RestClient of the application");
@@ -260,6 +261,7 @@ public final class SsfTransmitterFactory {
         if (poll.isLongPolling()) {
             poller.setLongPolling(poll.getLongPollingHold());
         }
+        poller.setUriPolicy(uriPolicy(properties));
         poller.setTransmitter(properties.getTransmitterIssuer());
         poller.setMetrics((metrics != null) ? metrics : SsfReceiverMetrics.NOOP);
         poller.setInterval(poll.getInterval());
@@ -373,6 +375,13 @@ public final class SsfTransmitterFactory {
             SsfReceiverStream receiverStream) {
         URI configured = properties.getPoll().getEndpointUrl();
         if (configured != null) {
+            try {
+                uriPolicy(properties).checkEndpoint(configured, "The poll endpoint");
+            }
+            catch (IllegalArgumentException ex) {
+                throw new InvalidConfigurationPropertyValueException(prefix(name) + "poll.endpoint-url", configured,
+                        ex.getMessage());
+            }
             return () -> configured;
         }
         if (!registersStream(properties)) {

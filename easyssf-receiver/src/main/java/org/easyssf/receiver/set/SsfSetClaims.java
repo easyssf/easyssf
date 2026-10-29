@@ -15,6 +15,22 @@ public final class SsfSetClaims {
 
     /**
      * @param encodedSet the SET as received
+     * @return the {@code jti} claim, {@code null} if the SET cannot be parsed or has none
+     */
+    public static String unverifiedJti(String encodedSet) {
+        if (encodedSet == null || encodedSet.isBlank()) {
+            return null;
+        }
+        try {
+            return JWTParser.parse(encodedSet).getJWTClaimsSet().getJWTID();
+        }
+        catch (ParseException | RuntimeException ex) {
+            return null;
+        }
+    }
+
+    /**
+     * @param encodedSet the SET as received
      * @return the {@code iss} claim, {@code null} if the SET cannot be parsed or has none
      */
     public static String unverifiedIssuer(String encodedSet) {

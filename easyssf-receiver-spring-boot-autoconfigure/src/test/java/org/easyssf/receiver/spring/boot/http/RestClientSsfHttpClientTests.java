@@ -2,6 +2,7 @@ package org.easyssf.receiver.spring.boot.http;
 
 import java.io.IOException;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import org.easyssf.core.stream.SsfStreamConfiguration;
@@ -47,6 +48,18 @@ class RestClientSsfHttpClientTests {
             .execute(SsfHttpRequest.get(URI.create(transmitter.issuer() + "/streams")));
         assertThat(unauthorized.status()).isEqualTo(401);
         assertThat(unauthorized.isSuccessful()).isFalse();
+    }
+
+    @Test
+    void cutsOffResponseLargerThanTheMaximum() throws Exception {
+        RestClientSsfHttpClient bounded = new RestClientSsfHttpClient(RestClient.create());
+        URI jwksUri = URI.create(transmitter.jwksUri());
+        int size = bounded.execute(SsfHttpRequest.get(jwksUri)).body().getBytes(StandardCharsets.UTF_8).length;
+        bounded.setMaxResponseSize(size - 1);
+        assertThatIOException().isThrownBy(() -> bounded.execute(SsfHttpRequest.get(jwksUri)))
+            .withMessageContaining("larger than the " + (size - 1) + " bytes accepted");
+        bounded.setMaxResponseSize(size);
+        assertThat(bounded.execute(SsfHttpRequest.get(jwksUri)).status()).isEqualTo(200);
     }
 
     @Test

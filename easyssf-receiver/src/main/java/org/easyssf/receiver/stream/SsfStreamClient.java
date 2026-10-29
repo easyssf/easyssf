@@ -26,7 +26,9 @@ import com.nimbusds.jose.util.JSONObjectUtils;
 
 /**
  * Client for the stream management API of the transmitter (SSF 1.0, section 8.1). The
- * endpoints are discovered from the transmitter metadata.
+ * endpoints are discovered from the transmitter metadata. Every stream configuration the
+ * transmitter returns is checked to carry the issuer of the metadata before it is
+ * accepted (section 8.1.1): the SETs of a stream with another issuer would not verify.
  */
 public class SsfStreamClient {
 
@@ -53,6 +55,8 @@ public class SsfStreamClient {
 
     /**
      * The streams of this receiver.
+     * @throws SsfStreamIssuerMismatchException if a stream has another issuer than the
+     * transmitter
      */
     @SuppressWarnings("unchecked")
     public List<SsfStreamConfiguration> getStreams() {
@@ -76,12 +80,17 @@ public class SsfStreamClient {
         catch (java.text.ParseException ex) {
             throw new SsfStreamException("The transmitter returned an invalid list of streams", 0, ex);
         }
+        streams.forEach(this::checkIssuer);
         return streams;
     }
 
+    /**
+     * @throws SsfStreamIssuerMismatchException if the stream has another issuer than the
+     * transmitter
+     */
     public SsfStreamConfiguration getStream(String streamId) {
-        return new SsfStreamConfiguration(
-                parse(exchange("GET", withStreamId(configurationEndpoint(), streamId), null)));
+        return checkIssuer(new SsfStreamConfiguration(
+                parse(exchange("GET", withStreamId(configurationEndpoint(), streamId), null))));
     }
 
     /**
@@ -92,30 +101,43 @@ public class SsfStreamClient {
      * @see SsfStreamConfiguration#poll
      */
     public SsfStreamConfiguration createStream(SsfStreamConfiguration stream) {
-        SsfStreamConfiguration created = new SsfStreamConfiguration(
-                parse(exchange("POST", configurationEndpoint(), stream.claims())));
-        String issuer = this.metadataResolver.resolve().issuer();
-        if (!issuer.equals(created.issuer())) {
-            throw new SsfStreamIssuerMismatchException(issuer, created);
-        }
-        return created;
+        return checkIssuer(
+                new SsfStreamConfiguration(parse(exchange("POST", configurationEndpoint(), stream.claims()))));
     }
 
     /**
      * Updates the given members of a stream, the others are left as they are.
      * @param changes the members to change
+     * @throws SsfStreamIssuerMismatchException if the stream has another issuer than the
+     * transmitter
      */
     public SsfStreamConfiguration updateStream(String streamId, Map<String, Object> changes) {
-        return new SsfStreamConfiguration(
-                parse(exchange("PATCH", configurationEndpoint(), withStreamId(changes, streamId))));
+        return checkIssuer(new SsfStreamConfiguration(
+                parse(exchange("PATCH", configurationEndpoint(), withStreamId(changes, streamId)))));
     }
 
     /**
      * Replaces the configuration of a stream.
+     * @throws SsfStreamIssuerMismatchException if the stream has another issuer than the
+     * transmitter
      */
     public SsfStreamConfiguration replaceStream(String streamId, SsfStreamConfiguration stream) {
-        return new SsfStreamConfiguration(
-                parse(exchange("PUT", configurationEndpoint(), withStreamId(stream.claims(), streamId))));
+        return checkIssuer(new SsfStreamConfiguration(
+                parse(exchange("PUT", configurationEndpoint(), withStreamId(stream.claims(), streamId)))));
+    }
+
+    /**
+     * A stream belongs to the transmitter the metadata was obtained from (SSF 1.0,
+     * section 8.1.1, {@code iss}); SETs of a stream with another issuer would not verify
+     * against that transmitter's keys and issuer, so such a stream is refused wherever it
+     * comes from.
+     */
+    private SsfStreamConfiguration checkIssuer(SsfStreamConfiguration stream) {
+        String issuer = this.metadataResolver.resolve().issuer();
+        if (!issuer.equals(stream.issuer())) {
+            throw new SsfStreamIssuerMismatchException(issuer, stream);
+        }
+        return stream;
     }
 
     public void deleteStream(String streamId) {

@@ -310,7 +310,9 @@ verifier.setExpectedAudience("https://my-app.example");
 // metadata.resolve() also tells specVersion(), deliveryMethodsSupported(), criticalSubjectMembers(),
 // authorizationSchemes() and defaultSubjects(). The resolver requires https for the issuer and the
 // endpoints of the metadata (http on loopback addresses only); pass SsfTransmitterUriPolicy.INSECURE
-// as a fourth argument for a development setup.
+// as a fourth argument for a development setup. SsfPoller.setUriPolicy holds the poll endpoint to the
+// same rule, as the access token goes there. Response bodies are bounded, see
+// JdkSsfHttpClient.setMaxResponseSize.
 
 SsfEventHandler handler = (eventContext) -> {
     if (eventContext.hasEvent("CaepSessionRevoked")) {

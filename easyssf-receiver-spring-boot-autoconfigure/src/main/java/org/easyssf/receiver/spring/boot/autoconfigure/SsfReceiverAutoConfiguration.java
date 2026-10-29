@@ -100,6 +100,7 @@ public final class SsfReceiverAutoConfiguration {
                         : SsfReceiverProperties.Http.DEFAULT_TIMEOUT,
                 (http.getReadTimeout() != null) ? http.getReadTimeout() : SsfReceiverProperties.Http.DEFAULT_TIMEOUT);
         httpClient.setUserAgent(http.getUserAgent());
+        httpClient.setMaxResponseSize(http.getMaxResponseSize().toBytes());
         return httpClient;
     }
 

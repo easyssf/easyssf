@@ -21,10 +21,12 @@ import org.easyssf.receiver.http.SsfHttpClient;
 import org.easyssf.receiver.http.SsfHttpRequest;
 import org.easyssf.receiver.http.SsfHttpResponse;
 import org.easyssf.receiver.metrics.SsfReceiverMetrics;
+import org.easyssf.receiver.set.SsfSetClaims;
 import org.easyssf.receiver.set.SsfSetProcessor;
 import org.easyssf.receiver.set.SsfSetVerificationException;
 import org.easyssf.receiver.transmitter.SsfTransmitterTokenProvider;
 import org.easyssf.receiver.transmitter.SsfTransmitterUnavailableException;
+import org.easyssf.receiver.transmitter.SsfTransmitterUriPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -57,6 +59,13 @@ import com.nimbusds.jose.util.JSONObjectUtils;
  * the startup, not a request of the transmitter to slow down. {@link #wakeUp()} ends the
  * pause between two polls altogether; {@code SsfTransmitter} calls it when the stream is
  * registered, so that the first poll follows the registration at once.
+ *
+ * <p>
+ * The poll request carries the access token, so the poll endpoint is held to the
+ * {@link #setUriPolicy(SsfTransmitterUriPolicy) URI policy} of the transmitter's metadata
+ * endpoints before the first request goes out: {@code https}, or {@code http} on loopback
+ * addresses only, whether the endpoint was configured or taken from the stream
+ * configuration the transmitter returned.
  */
 public class SsfPoller {
 
@@ -121,9 +130,16 @@ public class SsfPoller {
 
     private volatile String lastPollError;
 
+    /**
+     * The thread of the current run; a thread that finds another one here, or none, has
+     * been stopped and ends, even if {@link #start()} was called again meanwhile
+     */
     private volatile Thread thread;
 
-    private volatile boolean running;
+    private SsfTransmitterUriPolicy uriPolicy = SsfTransmitterUriPolicy.DEFAULT;
+
+    /** the endpoint the policy last accepted, so that it is checked once, not per poll */
+    private volatile URI checkedEndpoint;
 
     private final ReentrantLock polling = new ReentrantLock();
 
@@ -250,6 +266,19 @@ public class SsfPoller {
     }
 
     /**
+     * What the poll endpoint must look like before the access token is sent to it, the
+     * {@link SsfTransmitterUriPolicy#DEFAULT default} unless set: {@code https}, or
+     * {@code http} on loopback addresses only. Pass
+     * {@link SsfTransmitterUriPolicy#INSECURE} for a transmitter without TLS in a test
+     * setup.
+     */
+    public void setUriPolicy(SsfTransmitterUriPolicy uriPolicy) {
+        SsfAssert.notNull(uriPolicy, "uriPolicy must not be null");
+        this.uriPolicy = uriPolicy;
+        this.checkedEndpoint = null;
+    }
+
+    /**
      * @param transmitter the issuer of the transmitter that is polled, for the metrics
      * and as the key of its acknowledgements in the {@link SsfPollAckStore}
      */
@@ -297,7 +326,6 @@ public class SsfPoller {
             if (this.thread != null) {
                 return;
             }
-            this.running = true;
             this.metrics.pollerStarted(this.transmitter, this.pendingAckCount);
             Thread thread = this.threadFactory.newThread(this::run);
             SsfAssert.notNull(thread, "the thread factory returned no thread");
@@ -319,11 +347,14 @@ public class SsfPoller {
         try {
             Thread thread = this.thread;
             this.thread = null;
-            this.running = false;
             if (thread != null) {
                 thread.interrupt();
                 try {
-                    thread.join(Duration.ofSeconds(5));
+                    if (!thread.join(Duration.ofSeconds(5))) {
+                        // a handler is still running; the thread ends once it returns,
+                        // as it is no longer the thread of this poller
+                        logger.warn("The polling thread is still handling a SET; it ends after the handlers return");
+                    }
                 }
                 catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
@@ -398,10 +429,17 @@ public class SsfPoller {
         return (key != null) ? this.ackStore.size(key) : 0;
     }
 
+    /**
+     * @return whether the calling thread is the thread of the current run
+     */
+    private boolean isCurrentThread() {
+        return this.thread == Thread.currentThread();
+    }
+
     private void run() {
         try {
             Thread.sleep(this.initialDelay);
-            while (this.running) {
+            while (isCurrentThread()) {
                 clearWakeUp();
                 Duration pause = this.interval;
                 long started = System.nanoTime();
@@ -421,13 +459,13 @@ public class SsfPoller {
                     }
                 }
                 catch (RuntimeException ex) {
-                    if (!this.running) {
+                    if (!isCurrentThread()) {
                         return;
                     }
                     logger.warn("Could not poll the SSF transmitter: " + ex.getMessage());
                     logger.debug("Cause of the failed poll", ex);
                 }
-                if (this.running && pause.isPositive()) {
+                if (isCurrentThread() && pause.isPositive()) {
                     pause(pause);
                 }
             }
@@ -444,7 +482,7 @@ public class SsfPoller {
         long nanos = pause.toNanos();
         this.pausing.lock();
         try {
-            while (!this.wakeUpRequested && nanos > 0 && this.running) {
+            while (!this.wakeUpRequested && nanos > 0 && isCurrentThread()) {
                 nanos = this.wokenUp.awaitNanos(nanos);
             }
         }
@@ -517,6 +555,7 @@ public class SsfPoller {
             logger.debug("Not polling, the SSF transmitter asked to wait until " + this.pausedUntil);
             return PollResult.SKIPPED;
         }
+        checkEndpoint(endpoint);
         this.lastPollAt = Instant.now();
         String key = ackKey(endpoint);
         try {
@@ -548,9 +587,38 @@ public class SsfPoller {
         }
     }
 
+    /**
+     * The access token goes to the endpoint, so the endpoint is held to the URI policy
+     * first. Checked once per endpoint: the supplier returns the same one poll after
+     * poll.
+     * @throws IllegalArgumentException if the endpoint does not pass; the poll fails and
+     * is tried again at the interval, and the message of the exception names the reason
+     */
+    private void checkEndpoint(URI endpoint) {
+        if (endpoint.equals(this.checkedEndpoint)) {
+            return;
+        }
+        this.uriPolicy.checkEndpoint(endpoint, "The poll endpoint");
+        this.checkedEndpoint = endpoint;
+    }
+
     private void process(String key, String jti, Object encodedSet) {
+        String set = String.valueOf(encodedSet);
+        // the key of a SET in the response is its jti (RFC 8936, section 2.4). A SET
+        // listed
+        // under another key would be acknowledged under a key that is not its own, so it
+        // is reported under that key instead of handled; one that does not parse is left
+        // to the verifier, which rejects it the same way
+        String setJti = SsfSetClaims.unverifiedJti(set);
+        if (setJti != null && !setJti.equals(jti)) {
+            String message = "The SET has the jti '" + setJti + "' but is listed under '" + jti + "'";
+            logger.warn("Rejecting polled SET " + jti + ": " + message);
+            this.metrics.setReceived(this.transmitter, SsfDeliveryMethod.POLL, SsfReceiverMetrics.SetOutcome.INVALID);
+            this.ackStore.record(key, SsfPendingAck.error(jti, SsfSetVerificationException.INVALID_REQUEST, message));
+            return;
+        }
         try {
-            this.processor.process(String.valueOf(encodedSet), SsfDeliveryMethod.POLL);
+            this.processor.process(set, SsfDeliveryMethod.POLL);
             this.ackStore.record(key, SsfPendingAck.ack(jti));
         }
         catch (SsfSetVerificationException ex) {
