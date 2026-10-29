@@ -89,6 +89,8 @@ public final class TestTransmitter implements AutoCloseable {
 
     private volatile String streamIssuer;
 
+    private volatile boolean severalStreamsAllowed;
+
     private volatile String lastUserAgent;
 
     private final HttpServer server;
@@ -207,7 +209,7 @@ public final class TestTransmitter implements AutoCloseable {
                 }
             }
             case "POST" -> {
-                if (!this.streams.isEmpty()) {
+                if (!this.streams.isEmpty() && !this.severalStreamsAllowed) {
                     respond(exchange, 409, JSONObjectUtils.toJSONString(Map.of("error", "stream_error",
                             "error_description", "Only one stream per receiver is allowed")));
                     return;
@@ -339,6 +341,15 @@ public final class TestTransmitter implements AutoCloseable {
     }
 
     /**
+     * Lets the transmitter create a stream per request. By default it allows one stream
+     * per receiver and answers a second create request with {@code 409}, as Keycloak
+     * does.
+     */
+    public void setSeveralStreamsAllowed(boolean severalStreamsAllowed) {
+        this.severalStreamsAllowed = severalStreamsAllowed;
+    }
+
+    /**
      * Makes the transmitter create streams with the given issuer instead of its own.
      */
     public void setStreamIssuer(String streamIssuer) {
@@ -465,6 +476,7 @@ public final class TestTransmitter implements AutoCloseable {
         this.available = true;
         this.validAccessToken = ACCESS_TOKEN;
         this.streamIssuer = null;
+        this.severalStreamsAllowed = false;
     }
 
     public void publishMetadata(MetadataLocation metadataLocation) {

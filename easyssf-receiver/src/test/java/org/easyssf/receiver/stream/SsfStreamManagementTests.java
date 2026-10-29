@@ -9,6 +9,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.easyssf.core.SsfDeliveryMethod;
@@ -34,6 +35,12 @@ class SsfStreamManagementTests {
     private static final URI PUSH_ENDPOINT = URI.create("https://receiver.example/ssf/push");
 
     private static final TestTransmitter transmitter = new TestTransmitter();
+
+    /**
+     * the registrations of these tests outlive their stop() on purpose, no need to wait
+     * long
+     */
+    private static final Duration STOP_TIMEOUT = Duration.ofMillis(200);
 
     private static final SsfHttpClient http = new JdkSsfHttpClient();
 
@@ -341,6 +348,7 @@ class SsfStreamManagementTests {
         SsfStreamRegistrar registrar = SsfStreamRegistrar.forManagedStream(client, this.receiverStream,
                 SsfStreamConfiguration.poll(List.of("CaepSessionRevoked"), null));
         registrar.setDeleteOnShutdown(true);
+        registrar.setStopTimeout(STOP_TIMEOUT);
         registrar.addListener(registered::add);
         registrar.start();
         assertThat(created.await(5, TimeUnit.SECONDS)).isTrue();
@@ -351,8 +359,7 @@ class SsfStreamManagementTests {
         // one, which finds the stream the first created and adopts it
         long stopping = System.nanoTime();
         registrar.stop();
-        assertThat(Duration.ofNanos(System.nanoTime() - stopping))
-            .isGreaterThanOrEqualTo(SsfStreamRegistrar.STOP_TIMEOUT);
+        assertThat(Duration.ofNanos(System.nanoTime() - stopping)).isGreaterThanOrEqualTo(STOP_TIMEOUT);
         registrar.start();
         await().atMost(Duration.ofSeconds(5)).until(() -> this.receiverStream.getStreamId() != null);
         assertThat(this.receiverStream.getStreamId()).isEqualTo(streamId);
@@ -370,6 +377,7 @@ class SsfStreamManagementTests {
 
     @Test
     void registrationThatOutlivesItsStopDeletesTheStreamItCreatedAfterTheNextOnePublished() throws Exception {
+        transmitter.setSeveralStreamsAllowed(true);
         CountDownLatch discovered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         // the first registration stalls after it looked for streams and found none, and
@@ -397,6 +405,7 @@ class SsfStreamManagementTests {
         SsfStreamRegistrar registrar = SsfStreamRegistrar.forManagedStream(client, this.receiverStream,
                 SsfStreamConfiguration.poll(List.of("CaepSessionRevoked"), null));
         registrar.setDeleteOnShutdown(true);
+        registrar.setStopTimeout(STOP_TIMEOUT);
         registrar.start();
         assertThat(discovered.await(5, TimeUnit.SECONDS)).isTrue();
 
@@ -416,6 +425,137 @@ class SsfStreamManagementTests {
 
         registrar.stop();
         assertThat(transmitter.streams()).isEmpty();
+    }
+
+    @Test
+    void streamAStoppedRegistrationLeavesIsAdoptedByTheNextOneAndNotMistakenForAnEarlierOne() throws Exception {
+        // a first registration published a stream and stop() deleted it; the receiver
+        // still
+        // remembers that stream, which must not pass for the one the next registration
+        // uses
+        AtomicBoolean stallCreate = new AtomicBoolean();
+        CountDownLatch created = new CountDownLatch(1);
+        CountDownLatch releaseCreate = new CountDownLatch(1);
+        AtomicBoolean stallDiscovery = new AtomicBoolean();
+        CountDownLatch discovered = new CountDownLatch(1);
+        CountDownLatch releaseDiscovery = new CountDownLatch(1);
+        SsfHttpClient stuck = (request) -> {
+            var response = http.execute(request);
+            if ("POST".equals(request.method()) && request.uri().getPath().endsWith("/streams")
+                    && stallCreate.getAndSet(false)) {
+                created.countDown();
+                awaitIgnoringInterrupts(releaseCreate);
+            }
+            if ("GET".equals(request.method()) && request.uri().getPath().endsWith("/streams")
+                    && stallDiscovery.getAndSet(false)) {
+                discovered.countDown();
+                awaitIgnoringInterrupts(releaseDiscovery);
+            }
+            return response;
+        };
+        SsfStreamClient client = new SsfStreamClient(stuck, () -> TestTransmitter.ACCESS_TOKEN,
+                new SsfTransmitterMetadataResolver(transmitter.issuer(), null, http));
+        SsfStreamRegistrar registrar = SsfStreamRegistrar.forManagedStream(client, this.receiverStream,
+                SsfStreamConfiguration.poll(List.of("CaepSessionRevoked"), null));
+        registrar.setDeleteOnShutdown(true);
+        registrar.setStopTimeout(STOP_TIMEOUT);
+        registrar.start();
+        await().atMost(Duration.ofSeconds(5)).until(() -> this.receiverStream.getStreamId() != null);
+        String earlier = this.receiverStream.getStreamId();
+        registrar.stop();
+        assertThat(transmitter.streams()).isEmpty();
+        assertThat(this.receiverStream.getStreamId()).isEqualTo(earlier);
+
+        // the second registration creates a stream and stalls; stop() gives it up and the
+        // third finds that stream, and stalls before it publishes it
+        stallCreate.set(true);
+        registrar.start();
+        assertThat(created.await(5, TimeUnit.SECONDS)).isTrue();
+        String streamId = (String) transmitter.streams().get(0).get("stream_id");
+        registrar.stop();
+        stallDiscovery.set(true);
+        registrar.start();
+        assertThat(discovered.await(5, TimeUnit.SECONDS)).isTrue();
+
+        // the second returns now: the third has not published, so the stream is left to
+        // it,
+        // not deleted for differing from the stream of the first
+        releaseCreate.countDown();
+        await().during(Duration.ofMillis(300)).until(() -> transmitter.streams().size() == 1);
+        releaseDiscovery.countDown();
+        await().atMost(Duration.ofSeconds(5)).until(() -> streamId.equals(this.receiverStream.getStreamId()));
+        assertThat(transmitter.streams()).hasSize(1);
+        assertThat(registrar.getState()).isEqualTo(SsfStreamRegistrar.State.REGISTERED);
+
+        registrar.stop();
+        assertThat(transmitter.streams()).isEmpty();
+    }
+
+    @Test
+    void streamAStoppedRegistrationCreatesAfterTheNextOneLookedIsDeletedOnceTheNextOnePublished() throws Exception {
+        transmitter.setSeveralStreamsAllowed(true);
+        // the first registration stalls after it looked and found no stream; the second
+        // finds none either, creates a stream and stalls before it publishes; the first
+        // then creates a stream nobody will adopt
+        CountDownLatch discovered = new CountDownLatch(1);
+        CountDownLatch releaseDiscovery = new CountDownLatch(1);
+        AtomicBoolean stallCreate = new AtomicBoolean();
+        CountDownLatch created = new CountDownLatch(1);
+        CountDownLatch releaseCreate = new CountDownLatch(1);
+        SsfHttpClient stuck = (request) -> {
+            var response = http.execute(request);
+            if ("GET".equals(request.method()) && request.uri().getPath().endsWith("/streams")
+                    && discovered.getCount() > 0) {
+                discovered.countDown();
+                awaitIgnoringInterrupts(releaseDiscovery);
+            }
+            if ("POST".equals(request.method()) && request.uri().getPath().endsWith("/streams")
+                    && stallCreate.getAndSet(false)) {
+                created.countDown();
+                awaitIgnoringInterrupts(releaseCreate);
+            }
+            return response;
+        };
+        SsfStreamClient client = new SsfStreamClient(stuck, () -> TestTransmitter.ACCESS_TOKEN,
+                new SsfTransmitterMetadataResolver(transmitter.issuer(), null, http));
+        SsfStreamRegistrar registrar = SsfStreamRegistrar.forManagedStream(client, this.receiverStream,
+                SsfStreamConfiguration.poll(List.of("CaepSessionRevoked"), null));
+        registrar.setDeleteOnShutdown(true);
+        registrar.setStopTimeout(STOP_TIMEOUT);
+        registrar.start();
+        assertThat(discovered.await(5, TimeUnit.SECONDS)).isTrue();
+        registrar.stop();
+        stallCreate.set(true);
+        registrar.start();
+        assertThat(created.await(5, TimeUnit.SECONDS)).isTrue();
+        String published = (String) transmitter.streams().get(0).get("stream_id");
+
+        // the first creates its stream while the second has not published
+        releaseDiscovery.countDown();
+        await().atMost(Duration.ofSeconds(5)).until(() -> transmitter.streams().size() == 2);
+        await().during(Duration.ofMillis(300)).until(() -> transmitter.streams().size() == 2);
+
+        // the second publishes its own stream: the other one is an orphan and goes
+        releaseCreate.countDown();
+        await().atMost(Duration.ofSeconds(5)).until(() -> transmitter.streams().size() == 1);
+        assertThat(transmitter.streams().get(0).get("stream_id")).isEqualTo(published);
+        assertThat(this.receiverStream.getStreamId()).isEqualTo(published);
+
+        registrar.stop();
+        assertThat(transmitter.streams()).isEmpty();
+    }
+
+    private static void awaitIgnoringInterrupts(CountDownLatch latch) {
+        boolean released = false;
+        while (!released) {
+            try {
+                latch.await();
+                released = true;
+            }
+            catch (InterruptedException ex) {
+                // a client that does not care for the interrupt of stop()
+            }
+        }
     }
 
     @Test
