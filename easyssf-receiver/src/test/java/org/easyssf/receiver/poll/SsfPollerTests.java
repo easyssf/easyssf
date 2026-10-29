@@ -64,6 +64,11 @@ class SsfPollerTests {
     }
 
     private SsfPoller poller(java.util.function.Supplier<URI> endpoint, SsfTransmitterTokenProvider tokenProvider) {
+        return poller(endpoint, tokenProvider, new JdkSsfHttpClient());
+    }
+
+    private SsfPoller poller(java.util.function.Supplier<URI> endpoint, SsfTransmitterTokenProvider tokenProvider,
+            SsfHttpClient http) {
         SsfEventHandler handler = (eventContext) -> {
             if (!this.failures.isEmpty()) {
                 throw this.failures.remove(0);
@@ -71,7 +76,6 @@ class SsfPollerTests {
             this.handled.add(eventContext.eventToken().jti());
             this.afterHandling.run();
         };
-        SsfHttpClient http = new JdkSsfHttpClient();
         NimbusSsfSetVerifier verifier = new NimbusSsfSetVerifier(transmitter.issuer(), transmitter::jwksUri, http);
         MicrometerSsfReceiverMetrics metrics = new MicrometerSsfReceiverMetrics(this.meterRegistry);
         SsfSetProcessor processor = new SsfSetProcessor(verifier, new InMemorySsfJtiDedupStore(100), List.of(handler));
@@ -212,6 +216,33 @@ class SsfPollerTests {
         insecure.setUriPolicy(SsfTransmitterUriPolicy.INSECURE);
         assertThatExceptionOfType(IllegalStateException.class).isThrownBy(insecure::pollNow)
             .withMessageContaining("Poll request to http://transmitter.example/poll failed");
+    }
+
+    @Test
+    void doesNotFlushAcknowledgementsOnStopToAPollEndpointWithoutTls() {
+        // the endpoint moves to a host without TLS while acknowledgements are pending, as
+        // a
+        // changed stream configuration could make it
+        AtomicReference<URI> endpoint = new AtomicReference<>(URI.create(transmitter.pollUri()));
+        List<URI> requested = new ArrayList<>();
+        SsfHttpClient recording = (request) -> {
+            requested.add(request.uri());
+            return new JdkSsfHttpClient().execute(request);
+        };
+        SsfPoller poller = poller(endpoint::get, () -> TestTransmitter.ACCESS_TOKEN, recording);
+        InMemorySsfPollAckStore acks = new InMemorySsfPollAckStore();
+        poller.setAckStore(acks);
+        poller.setInitialDelay(Duration.ofHours(1));
+        poller.start();
+        URI insecure = URI.create("http://transmitter.example/poll");
+        endpoint.set(insecure);
+        acks.record(insecure.toString(), SsfPendingAck.ack("jti-1"));
+        assertThat(poller.getPendingAckCount()).isEqualTo(1);
+
+        poller.stop();
+
+        assertThat(requested).noneMatch((uri) -> "transmitter.example".equals(uri.getHost()));
+        assertThat(acks.size(insecure.toString())).isEqualTo(1);
     }
 
     @Test

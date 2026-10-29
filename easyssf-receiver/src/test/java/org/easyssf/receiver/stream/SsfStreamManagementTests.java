@@ -277,6 +277,41 @@ class SsfStreamManagementTests {
     }
 
     @Test
+    void stopWaitsForAPublicationInProgressAndDeletesTheStreamItPublished() throws Exception {
+        CountDownLatch publishing = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        List<SsfStreamConfiguration> registered = new ArrayList<>();
+        SsfStreamRegistrar registrar = registrar(SsfStreamConfiguration.poll(List.of("CaepSessionRevoked"), null));
+        registrar.setDeleteOnShutdown(true);
+        registrar.addListener((stream) -> {
+            // the registration passed its check and is publishing when stop() is called
+            registered.add(stream);
+            publishing.countDown();
+            try {
+                release.await();
+            }
+            catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        registrar.start();
+        assertThat(publishing.await(5, TimeUnit.SECONDS)).isTrue();
+
+        Thread stopping = Thread.ofVirtual().start(registrar::stop);
+        await().during(Duration.ofMillis(200)).until(stopping::isAlive);
+        assertThat(transmitter.streams()).hasSize(1);
+        release.countDown();
+        stopping.join(Duration.ofSeconds(10));
+        assertThat(stopping.isAlive()).isFalse();
+
+        // the publication completed before stop() went on, so the stream it published is
+        // the one stop() deleted
+        assertThat(registered).hasSize(1);
+        assertThat(this.receiverStream.getStreamId()).isEqualTo(registered.get(0).streamId());
+        assertThat(transmitter.streams()).isEmpty();
+    }
+
+    @Test
     void obtainsNewAccessTokenWhenTheTransmitterRejectsTheCurrentOne() {
         SsfStreamClient client = new SsfStreamClient(http, this.tokenProvider,
                 new SsfTransmitterMetadataResolver(transmitter.issuer(), null, http));
