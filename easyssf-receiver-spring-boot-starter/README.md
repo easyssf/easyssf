@@ -253,6 +253,16 @@ pushed SET is answered with `503` and a polled one left unacknowledged, so the t
 it again.
 `easyssf.receiver.stream.delete-on-shutdown=true` deletes the stream when the application stops.
 
+Things to know:
+
+- **Several instances** register under the same credentials and reuse the one stream, as the
+  registrar finds it on startup. Several instances that start at the same time against a transmitter
+  with no stream yet may each create one, unless the transmitter allows a single stream per receiver
+  (Keycloak does); every event is then delivered once per stream, with a `jti` of its own, which the
+  dedup store cannot tell apart. Start one instance first, or let the transmitter manage the stream.
+- **`delete-on-shutdown` is for a single instance**: the stream is shared, so the first instance to
+  stop deletes it for the others, and the next one to start creates a new stream with a new audience.
+
 The `SsfStreamClient` bean gives access to the whole stream management API (SSF 1.0, section 8.1):
 
 ```java
@@ -455,7 +465,7 @@ name, with its own status. Switch it off with `management.health.easyssf.enabled
 | `easyssf.receiver.stream.id` | | Stream created at the transmitter, looked up on startup. |
 | `easyssf.receiver.stream.events-requested` | `CaepSessionRevoked`, `CaepCredentialChange` | For a stream managed by the receiver. |
 | `easyssf.receiver.stream.description` | | For a stream managed by the receiver. |
-| `easyssf.receiver.stream.delete-on-shutdown` | `false` | For a stream managed by the receiver. |
+| `easyssf.receiver.stream.delete-on-shutdown` | `false` | For a stream managed by the receiver. Single instance only: the stream is shared, see [Stream management](#stream-management). |
 | `easyssf.receiver.poll.endpoint-url` | from the stream | Held to the same `https` rule as the transmitter issuer. |
 | `easyssf.receiver.poll.auto-startup` | `true` | |
 | `easyssf.receiver.poll.interval` | `30s` | |
