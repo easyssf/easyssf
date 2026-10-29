@@ -5,6 +5,11 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.easyssf.core.SsfDeliveryMethod;
 import org.easyssf.core.event.SsfEventTypes;
@@ -156,6 +161,119 @@ class SsfStreamManagementTests {
             registrar.stop();
         }
         assertThat(this.receiverStream.getStreamId()).isNull();
+    }
+
+    @Test
+    void refusesExistingStreamsWithAnotherIssuer() {
+        transmitter.setStreamIssuer("https://other.example");
+        Map<String, Object> existing = transmitter
+            .addStream(SsfStreamConfiguration.poll(List.of("CaepSessionRevoked"), null).claims());
+        String streamId = (String) existing.get("stream_id");
+        assertThatExceptionOfType(SsfStreamIssuerMismatchException.class)
+            .isThrownBy(() -> this.streamClient.getStream(streamId));
+        assertThatExceptionOfType(SsfStreamIssuerMismatchException.class)
+            .isThrownBy(() -> this.streamClient.getStreams());
+        assertThatExceptionOfType(SsfStreamIssuerMismatchException.class)
+            .isThrownBy(() -> this.streamClient.updateStream(streamId, Map.of("description", "x")));
+        assertThatExceptionOfType(SsfStreamIssuerMismatchException.class).isThrownBy(() -> this.streamClient
+            .replaceStream(streamId, SsfStreamConfiguration.poll(List.of("CaepSessionRevoked"), null)));
+    }
+
+    @Test
+    void registrarGivesUpOnExistingStreamWithAnotherIssuerWithoutDeletingIt() {
+        transmitter.setStreamIssuer("https://other.example");
+        Map<String, Object> existing = transmitter
+            .addStream(SsfStreamConfiguration.poll(List.of("CaepSessionRevoked"), null).claims());
+        SsfStreamRegistrar registrar = SsfStreamRegistrar.forExistingStream(this.streamClient, this.receiverStream,
+                (String) existing.get("stream_id"));
+        registrar.setInitialRetryDelay(Duration.ofMillis(50));
+        registrar.start();
+        try {
+            await().atMost(Duration.ofSeconds(5)).until(() -> registrar.getState() == SsfStreamRegistrar.State.FAILED);
+        }
+        finally {
+            registrar.stop();
+        }
+        assertThat(registrar.getLastError()).contains("https://other.example");
+        assertThat(this.receiverStream.getStreamId()).isNull();
+        // the stream is not this registrar's to delete
+        assertThat(transmitter.streams()).hasSize(1);
+    }
+
+    @Test
+    void registrarStartIsIdempotentAndStopEndsTheRegistration() {
+        transmitter.setAvailable(false);
+        Set<Thread> callers = ConcurrentHashMap.newKeySet();
+        AtomicInteger calls = new AtomicInteger();
+        SsfHttpClient recording = (request) -> {
+            callers.add(Thread.currentThread());
+            calls.incrementAndGet();
+            return http.execute(request);
+        };
+        SsfStreamClient client = new SsfStreamClient(recording, () -> TestTransmitter.ACCESS_TOKEN,
+                new SsfTransmitterMetadataResolver(transmitter.issuer(), null, http));
+        SsfStreamRegistrar registrar = SsfStreamRegistrar.forManagedStream(client, this.receiverStream,
+                SsfStreamConfiguration.poll(List.of("CaepSessionRevoked"), null));
+        registrar.setInitialRetryDelay(Duration.ofMillis(20));
+        registrar.start();
+        registrar.start();
+        assertThat(registrar.isRunning()).isTrue();
+        await().atMost(Duration.ofSeconds(5)).until(() -> calls.get() >= 3);
+        // the retries all come from the one registration thread
+        assertThat(callers).hasSize(1);
+
+        registrar.stop();
+        registrar.stop();
+        assertThat(registrar.isRunning()).isFalse();
+        int callsAtStop = calls.get();
+        await().during(Duration.ofMillis(200)).until(() -> calls.get() == callsAtStop);
+        assertThat(this.receiverStream.getStreamId()).isNull();
+    }
+
+    @Test
+    void registrationThatCompletesAfterStopPublishesNothing() throws Exception {
+        CountDownLatch streamsRequested = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        // an HTTP client that outlives the interrupt of stop(), as one that swallows
+        // interrupts would, and completes the registration afterwards
+        SsfHttpClient slow = (request) -> {
+            if (request.uri().getPath().endsWith("/streams") && "GET".equals(request.method())) {
+                streamsRequested.countDown();
+                boolean released = false;
+                while (!released) {
+                    try {
+                        release.await();
+                        released = true;
+                    }
+                    catch (InterruptedException ex) {
+                        // keeps waiting, the interrupt is swallowed
+                    }
+                }
+            }
+            return http.execute(request);
+        };
+        SsfStreamClient client = new SsfStreamClient(slow, () -> TestTransmitter.ACCESS_TOKEN,
+                new SsfTransmitterMetadataResolver(transmitter.issuer(), null, http));
+        List<SsfStreamConfiguration> registered = new ArrayList<>();
+        SsfStreamRegistrar registrar = SsfStreamRegistrar.forManagedStream(client, this.receiverStream,
+                SsfStreamConfiguration.poll(List.of("CaepSessionRevoked"), null));
+        registrar.setDeleteOnShutdown(true);
+        registrar.addListener(registered::add);
+        registrar.start();
+        assertThat(streamsRequested.await(5, TimeUnit.SECONDS)).isTrue();
+
+        Thread stopping = Thread.ofVirtual().start(registrar::stop);
+        // stop() waits for the registration, which completes only once released
+        await().during(Duration.ofMillis(200)).until(stopping::isAlive);
+        release.countDown();
+        stopping.join(Duration.ofSeconds(10));
+        assertThat(stopping.isAlive()).isFalse();
+
+        // the stream created on the way is deleted, as it would have been on shutdown
+        await().atMost(Duration.ofSeconds(5)).until(() -> transmitter.streams().isEmpty());
+        assertThat(registered).isEmpty();
+        assertThat(this.receiverStream.getStreamId()).isNull();
+        assertThat(registrar.getState()).isNotEqualTo(SsfStreamRegistrar.State.REGISTERED);
     }
 
     @Test

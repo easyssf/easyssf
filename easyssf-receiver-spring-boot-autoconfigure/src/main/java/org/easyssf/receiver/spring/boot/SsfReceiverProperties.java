@@ -7,10 +7,12 @@ import java.util.List;
 import java.util.Map;
 
 import org.easyssf.core.event.SsfSubject;
+import org.easyssf.receiver.http.SsfHttpResponse;
 import org.easyssf.receiver.jdbc.JdbcSsfPollAckStore;
 import org.easyssf.receiver.session.SsfSubjectClaimsMatcher;
 import org.easyssf.receiver.transmitter.SsfTransmitter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.util.unit.DataSize;
 
 /**
  * Configuration properties for the OpenID Shared Signals Framework (SSF) receiver.
@@ -180,6 +182,13 @@ public class SsfReceiverProperties extends SsfTransmitterProperties {
          */
         private String userAgent;
 
+        /**
+         * The largest response body accepted from the transmitter; a larger response
+         * fails the call. Metadata, JWK Sets, stream configurations and poll responses
+         * stay far below the default of 4MB.
+         */
+        private DataSize maxResponseSize = DataSize.ofBytes(SsfHttpResponse.DEFAULT_MAX_BODY_SIZE);
+
         public boolean isUseRestClient() {
             return this.useRestClient;
         }
@@ -210,6 +219,14 @@ public class SsfReceiverProperties extends SsfTransmitterProperties {
 
         public void setUserAgent(String userAgent) {
             this.userAgent = userAgent;
+        }
+
+        public DataSize getMaxResponseSize() {
+            return this.maxResponseSize;
+        }
+
+        public void setMaxResponseSize(DataSize maxResponseSize) {
+            this.maxResponseSize = maxResponseSize;
         }
 
     }

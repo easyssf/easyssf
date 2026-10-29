@@ -68,7 +68,9 @@ public final class SsfReceiverRestClientAutoConfiguration {
             builder.defaultHeader(HttpHeaders.USER_AGENT, http.getUserAgent());
         }
         logger.info("The SSF transmitter is called with the RestClient of the application");
-        return new RestClientSsfHttpClient(builder.build());
+        RestClientSsfHttpClient httpClient = new RestClientSsfHttpClient(builder.build());
+        httpClient.setMaxResponseSize(http.getMaxResponseSize().toBytes());
+        return httpClient;
     }
 
     /**

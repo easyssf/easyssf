@@ -387,6 +387,15 @@ class SsfReceiverAutoConfigurationTests {
     }
 
     @Test
+    void responseSizeForCallsToTheTransmitterIsConfigurable() {
+        this.webContextRunner.run((context) -> assertThat(context.getBean(JdkSsfHttpClient.class).getMaxResponseSize())
+            .isEqualTo(4L * 1024 * 1024));
+        this.webContextRunner.withPropertyValues("easyssf.receiver.http.max-response-size=64KB")
+            .run((context) -> assertThat(context.getBean(JdkSsfHttpClient.class).getMaxResponseSize())
+                .isEqualTo(64 * 1024));
+    }
+
+    @Test
     void transmitterIsCalledWithRestClientOfTheApplication() {
         try (TestTransmitter transmitter = new TestTransmitter()) {
             this.webContextRunner.withConfiguration(REST_CLIENT)
@@ -534,6 +543,25 @@ class SsfReceiverAutoConfigurationTests {
                 assertThat(context).doesNotHaveBean("ssfPushSecurityFilterChain");
                 assertThat(context).hasBean("defaultSecurityFilterChain");
             });
+    }
+
+    @Test
+    void pollEndpointWithoutTlsIsRefusedUnlessInsecureHttpIsAllowed() {
+        this.webContextRunner
+            .withPropertyValues("easyssf.receiver.delivery-method=poll", "easyssf.receiver.poll.auto-startup=false",
+                    "easyssf.receiver.poll.endpoint-url=http://idp.example/realms/test/poll")
+            .run((context) -> {
+                assertThat(context).hasFailed();
+                assertThat(context.getStartupFailure()).rootCause()
+                    .isInstanceOf(InvalidConfigurationPropertyValueException.class)
+                    .hasMessageContaining("easyssf.receiver.poll.endpoint-url")
+                    .hasMessageContaining("must use https");
+            });
+        this.webContextRunner
+            .withPropertyValues("easyssf.receiver.delivery-method=poll", "easyssf.receiver.poll.auto-startup=false",
+                    "easyssf.receiver.poll.endpoint-url=http://idp.example/realms/test/poll",
+                    "easyssf.receiver.allow-insecure-http=true")
+            .run((context) -> assertThat(context).hasSingleBean(SsfPoller.class));
     }
 
     @Test

@@ -26,9 +26,25 @@ public class RestClientSsfHttpClient implements SsfHttpClient {
 
     private final RestClient restClient;
 
+    private long maxResponseSize = SsfHttpResponse.DEFAULT_MAX_BODY_SIZE;
+
     public RestClientSsfHttpClient(RestClient restClient) {
         Assert.notNull(restClient, "restClient must not be null");
         this.restClient = restClient;
+    }
+
+    /**
+     * Bounds the response bodies, {@link SsfHttpResponse#DEFAULT_MAX_BODY_SIZE 4 MiB} by
+     * default; a larger response fails the call as if none was received.
+     * @param maxResponseSize the largest response body read, in bytes
+     */
+    public void setMaxResponseSize(long maxResponseSize) {
+        Assert.isTrue(maxResponseSize > 0, "maxResponseSize must be positive");
+        this.maxResponseSize = maxResponseSize;
+    }
+
+    public long getMaxResponseSize() {
+        return this.maxResponseSize;
     }
 
     @Override
@@ -47,8 +63,9 @@ public class RestClientSsfHttpClient implements SsfHttpClient {
                 MediaType contentType = clientResponse.getHeaders().getContentType();
                 Charset charset = (contentType != null && contentType.getCharset() != null) ? contentType.getCharset()
                         : StandardCharsets.UTF_8;
-                String body = new String(clientResponse.getBody().readAllBytes(), charset);
-                return new SsfHttpResponse(clientResponse.getStatusCode().value(), headers, body);
+                byte[] body = SsfHttpResponse.readBody(clientResponse.getBody(),
+                        clientResponse.getHeaders().getContentLength(), this.maxResponseSize, request.uri());
+                return new SsfHttpResponse(clientResponse.getStatusCode().value(), headers, new String(body, charset));
             });
         }
         catch (RestClientException ex) {

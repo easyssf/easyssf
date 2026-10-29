@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.easyssf.core.SsfDeliveryMethod;
 import org.easyssf.core.event.SsfEventTypes;
@@ -49,7 +50,14 @@ public class SsfStreamRegistrar {
 
     private Duration initialRetryDelay = Duration.ofSeconds(1);
 
+    /**
+     * The thread of the current registration; a registration that finds another thread
+     * here, or none, was stopped and publishes nothing
+     */
     private volatile Thread thread;
+
+    /** start() and stop() are idempotent and safe to call from any thread */
+    private final ReentrantLock lifecycle = new ReentrantLock();
 
     private volatile State state = State.NOT_STARTED;
 
@@ -153,11 +161,23 @@ public class SsfStreamRegistrar {
     }
 
     /**
-     * Starts looking up or registering the stream in the background.
+     * Starts looking up or registering the stream in the background. Calling it again
+     * while a registration runs has no effect.
      */
     public void start() {
-        this.state = State.REGISTERING;
-        this.thread = Thread.ofVirtual().name("ssf-stream-registrar").start(this::registerWithRetries);
+        this.lifecycle.lock();
+        try {
+            if (this.thread != null) {
+                return;
+            }
+            this.state = State.REGISTERING;
+            Thread thread = Thread.ofVirtual().name("ssf-stream-registrar").unstarted(this::registerWithRetries);
+            this.thread = thread;
+            thread.start();
+        }
+        finally {
+            this.lifecycle.unlock();
+        }
     }
 
     public State getState() {
@@ -177,20 +197,37 @@ public class SsfStreamRegistrar {
      * @see #setDeleteOnShutdown(boolean)
      */
     public void stop() {
-        Thread thread = this.thread;
-        this.thread = null;
-        if (thread != null) {
-            thread.interrupt();
+        this.lifecycle.lock();
+        try {
+            Thread thread = this.thread;
+            this.thread = null;
+            if (thread != null) {
+                thread.interrupt();
+                try {
+                    // a registration in flight ends with the interrupted call; one that
+                    // completes regardless sees it is no longer current and publishes
+                    // nothing
+                    if (!thread.join(Duration.ofSeconds(5))) {
+                        logger.warn("The registration of the SSF stream is still in progress");
+                    }
+                }
+                catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            String registeredStreamId = this.receiverStream.getStreamId();
+            if (this.deleteOnShutdown && this.desiredStream != null && registeredStreamId != null) {
+                try {
+                    this.streamClient.deleteStream(registeredStreamId);
+                    logger.info("Deleted SSF stream " + registeredStreamId);
+                }
+                catch (RuntimeException ex) {
+                    logger.warn("Could not delete SSF stream " + registeredStreamId + ": " + ex.getMessage());
+                }
+            }
         }
-        String registeredStreamId = this.receiverStream.getStreamId();
-        if (this.deleteOnShutdown && this.desiredStream != null && registeredStreamId != null) {
-            try {
-                this.streamClient.deleteStream(registeredStreamId);
-                logger.info("Deleted SSF stream " + registeredStreamId);
-            }
-            catch (RuntimeException ex) {
-                logger.warn("Could not delete SSF stream " + registeredStreamId + ": " + ex.getMessage());
-            }
+        finally {
+            this.lifecycle.unlock();
         }
     }
 
@@ -199,23 +236,32 @@ public class SsfStreamRegistrar {
     }
 
     private void registerWithRetries() {
+        Thread thread = Thread.currentThread();
         Duration delay = this.initialRetryDelay;
-        while (!Thread.currentThread().isInterrupted()) {
+        while (!thread.isInterrupted()) {
             try {
-                register();
+                Registration registration = lookUp();
+                if (this.thread != thread) {
+                    // stopped while the transmitter was called: the result is not
+                    // published, and a stream created on the way is not left behind
+                    if (registration.created() && this.deleteOnShutdown) {
+                        deleteQuietly(registration.stream().streamId());
+                    }
+                    return;
+                }
+                publish(registration);
                 return;
             }
             catch (SsfStreamIssuerMismatchException ex) {
-                // trying again would only create another stream that must not be used
+                // trying again would only find or create the same stream
                 logger.error("Not using the SSF stream: " + ex.getMessage());
                 this.lastError = ex.getMessage();
                 this.state = State.FAILED;
-                deleteQuietly(ex.getStream().streamId());
                 return;
             }
             catch (RuntimeException ex) {
                 this.lastError = ex.getMessage();
-                if (this.thread == null) {
+                if (this.thread != thread) {
                     return;
                 }
                 logger.warn("Could not set up the SSF stream, trying again in " + delay.toSeconds() + "s: "
@@ -233,50 +279,61 @@ public class SsfStreamRegistrar {
     }
 
     /**
-     * Looks up or registers the stream once.
+     * Looks up or registers the stream once, on the calling thread, and publishes it.
      * @return the stream
      * @throws SsfStreamException if the transmitter could not be called
+     * @throws SsfStreamIssuerMismatchException if the stream has another issuer than the
+     * transmitter; a stream created on the way is deleted again
      */
     public SsfStreamConfiguration register() {
-        SsfStreamConfiguration stream;
-        String action;
+        Registration registration = lookUp();
+        publish(registration);
+        return registration.stream();
+    }
+
+    /**
+     * The outcome of a look-up: the stream, and whether it was created on the way.
+     */
+    private record Registration(SsfStreamConfiguration stream, String action, boolean created) {
+    }
+
+    private Registration lookUp() {
         if (this.desiredStream == null) {
-            stream = this.streamClient.getStream(this.streamId);
-            action = "Using";
+            return new Registration(this.streamClient.getStream(this.streamId), "Using", false);
         }
-        else {
-            List<SsfStreamConfiguration> streams = this.streamClient.getStreams();
-            SsfStreamConfiguration existing = streams.stream()
-                .filter(this::hasDesiredDelivery)
-                .findFirst()
-                .orElse(null);
-            if (existing != null && hasDesiredEvents(existing)) {
-                stream = existing;
-                action = "Using existing";
-            }
-            else if (existing != null) {
-                stream = this.streamClient.updateStream(existing.streamId(), changes());
-                action = "Updated";
-            }
-            else {
-                try {
-                    stream = this.streamClient.createStream(this.desiredStream);
-                    action = "Created";
-                }
-                catch (SsfStreamException ex) {
-                    // the transmitter allows a single stream per receiver and it is
-                    // configured differently
-                    if (ex.getStatusCode() != 409 || streams.size() != 1) {
-                        throw ex;
-                    }
-                    stream = this.streamClient.updateStream(streams.get(0).streamId(), changes());
-                    action = "Updated";
-                }
-            }
+        List<SsfStreamConfiguration> streams = this.streamClient.getStreams();
+        SsfStreamConfiguration existing = streams.stream().filter(this::hasDesiredDelivery).findFirst().orElse(null);
+        if (existing != null && hasDesiredEvents(existing)) {
+            return new Registration(existing, "Using existing", false);
         }
+        if (existing != null) {
+            return new Registration(this.streamClient.updateStream(existing.streamId(), changes()), "Updated", false);
+        }
+        try {
+            return new Registration(this.streamClient.createStream(this.desiredStream), "Created", true);
+        }
+        catch (SsfStreamIssuerMismatchException ex) {
+            // the stream was created but must not be used, and trying again would only
+            // create another one
+            deleteQuietly(ex.getStream().streamId());
+            throw ex;
+        }
+        catch (SsfStreamException ex) {
+            // the transmitter allows a single stream per receiver and it is configured
+            // differently
+            if (ex.getStatusCode() != 409 || streams.size() != 1) {
+                throw ex;
+            }
+            return new Registration(this.streamClient.updateStream(streams.get(0).streamId(), changes()), "Updated",
+                    false);
+        }
+    }
+
+    private void publish(Registration registration) {
+        SsfStreamConfiguration stream = registration.stream();
         this.receiverStream.setConfiguration(stream);
-        logger.info(action + " SSF stream " + stream.streamId() + " (delivery " + stream.deliveryMethod() + " "
-                + Objects.toString(stream.deliveryEndpointUrl(), "") + ", events "
+        logger.info(registration.action() + " SSF stream " + stream.streamId() + " (delivery " + stream.deliveryMethod()
+                + " " + Objects.toString(stream.deliveryEndpointUrl(), "") + ", events "
                 + stream.eventsDelivered().stream().map(SsfEventTypes::aliasOf).toList() + ", audience "
                 + stream.audience() + ")");
         this.lastError = null;
@@ -290,7 +347,6 @@ public class SsfStreamRegistrar {
                 logger.debug("Cause of the failed listener", ex);
             }
         }
-        return stream;
     }
 
     private void deleteQuietly(String streamId) {

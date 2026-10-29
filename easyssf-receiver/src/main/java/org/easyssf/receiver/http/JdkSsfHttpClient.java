@@ -1,6 +1,7 @@
 package org.easyssf.receiver.http;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InterruptedIOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -10,7 +11,9 @@ import java.time.Duration;
 import org.easyssf.core.support.SsfAssert;
 
 /**
- * {@link SsfHttpClient} that uses the HTTP client of the JDK.
+ * {@link SsfHttpClient} that uses the HTTP client of the JDK. A response body larger than
+ * {@link #setMaxResponseSize the maximum} is not buffered: the call fails as if no
+ * response was received.
  */
 public class JdkSsfHttpClient implements SsfHttpClient {
 
@@ -21,6 +24,8 @@ public class JdkSsfHttpClient implements SsfHttpClient {
     private final Duration readTimeout;
 
     private String userAgent;
+
+    private long maxResponseSize = SsfHttpResponse.DEFAULT_MAX_BODY_SIZE;
 
     public JdkSsfHttpClient() {
         this(Duration.ofSeconds(5), Duration.ofSeconds(5));
@@ -59,6 +64,21 @@ public class JdkSsfHttpClient implements SsfHttpClient {
         return this.userAgent;
     }
 
+    /**
+     * Bounds the response bodies, {@link SsfHttpResponse#DEFAULT_MAX_BODY_SIZE 4 MiB} by
+     * default. A transmitter that sends more is treated as unavailable: the receiver
+     * never buffers a response of a size the transmitter chooses.
+     * @param maxResponseSize the largest response body read, in bytes
+     */
+    public void setMaxResponseSize(long maxResponseSize) {
+        SsfAssert.isTrue(maxResponseSize > 0, "maxResponseSize must be positive");
+        this.maxResponseSize = maxResponseSize;
+    }
+
+    public long getMaxResponseSize() {
+        return this.maxResponseSize;
+    }
+
     @Override
     public SsfHttpResponse execute(SsfHttpRequest request) throws IOException {
         HttpRequest.BodyPublisher body = (request.body() != null) ? HttpRequest.BodyPublishers.ofString(request.body())
@@ -71,8 +91,18 @@ public class JdkSsfHttpClient implements SsfHttpClient {
             builder.header(USER_AGENT, this.userAgent);
         }
         try {
-            HttpResponse<String> response = this.httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
-            return new SsfHttpResponse(response.statusCode(), response.headers().map(), response.body());
+            HttpResponse<InputStream> response = this.httpClient.send(builder.build(),
+                    HttpResponse.BodyHandlers.ofInputStream());
+            byte[] bytes;
+            // closing the stream ends the response early if the body is cut off
+            try (InputStream input = response.body()) {
+                bytes = SsfHttpResponse.readBody(input,
+                        response.headers().firstValueAsLong("Content-Length").orElse(-1), this.maxResponseSize,
+                        request.uri());
+            }
+            String contentType = response.headers().firstValue("Content-Type").orElse(null);
+            return new SsfHttpResponse(response.statusCode(), response.headers().map(),
+                    new String(bytes, SsfHttpResponse.charsetOf(contentType)));
         }
         catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
