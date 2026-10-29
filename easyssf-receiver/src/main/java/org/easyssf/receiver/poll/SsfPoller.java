@@ -555,7 +555,6 @@ public class SsfPoller {
             logger.debug("Not polling, the SSF transmitter asked to wait until " + this.pausedUntil);
             return PollResult.SKIPPED;
         }
-        checkEndpoint(endpoint);
         this.lastPollAt = Instant.now();
         String key = ackKey(endpoint);
         try {
@@ -589,8 +588,8 @@ public class SsfPoller {
 
     /**
      * The access token goes to the endpoint, so the endpoint is held to the URI policy
-     * first. Checked once per endpoint: the supplier returns the same one poll after
-     * poll.
+     * first. Checked once per endpoint: the supplier returns the same one request after
+     * request, and a changed one is checked again.
      * @throws IllegalArgumentException if the endpoint does not pass; the poll fails and
      * is tried again at the interval, and the message of the exception names the reason
      */
@@ -635,7 +634,13 @@ public class SsfPoller {
         }
     }
 
+    /**
+     * The one method that sends a poll request, for a poll as well as for the
+     * acknowledgements flushed on {@link #stop()}: the endpoint is checked here, so that
+     * no path sends the access token around the policy.
+     */
     private Map<String, Object> poll(URI endpoint, String key, int maxEvents, boolean returnImmediately) {
+        checkEndpoint(endpoint);
         List<SsfPendingAck> pending = this.ackStore.pending(key, this.maxAckBatch);
         List<String> acks = new ArrayList<>();
         Map<String, Object> errors = new LinkedHashMap<>();

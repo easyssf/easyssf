@@ -59,6 +59,15 @@ public class SsfStreamRegistrar {
     /** start() and stop() are idempotent and safe to call from any thread */
     private final ReentrantLock lifecycle = new ReentrantLock();
 
+    /**
+     * Guards {@link #thread} and the publication of a registration: stop() takes the
+     * thread away under it, the registration checks that it is still the thread and
+     * publishes under it, so a registration either publishes before stop() proceeds or
+     * not at all. A lock of its own, as stop() must not hold it while it waits for the
+     * registration thread.
+     */
+    private final ReentrantLock publication = new ReentrantLock();
+
     private volatile State state = State.NOT_STARTED;
 
     private volatile String lastError;
@@ -172,7 +181,13 @@ public class SsfStreamRegistrar {
             }
             this.state = State.REGISTERING;
             Thread thread = Thread.ofVirtual().name("ssf-stream-registrar").unstarted(this::registerWithRetries);
-            this.thread = thread;
+            this.publication.lock();
+            try {
+                this.thread = thread;
+            }
+            finally {
+                this.publication.unlock();
+            }
             thread.start();
         }
         finally {
@@ -199,8 +214,17 @@ public class SsfStreamRegistrar {
     public void stop() {
         this.lifecycle.lock();
         try {
-            Thread thread = this.thread;
-            this.thread = null;
+            Thread thread;
+            // a publication in progress completes first, so that the stream it publishes
+            // is the one deleted below; none starts afterwards
+            this.publication.lock();
+            try {
+                thread = this.thread;
+                this.thread = null;
+            }
+            finally {
+                this.publication.unlock();
+            }
             if (thread != null) {
                 thread.interrupt();
                 try {
@@ -241,15 +265,21 @@ public class SsfStreamRegistrar {
         while (!thread.isInterrupted()) {
             try {
                 Registration registration = lookUp();
-                if (this.thread != thread) {
-                    // stopped while the transmitter was called: the result is not
-                    // published, and a stream created on the way is not left behind
-                    if (registration.created() && this.deleteOnShutdown) {
-                        deleteQuietly(registration.stream().streamId());
+                this.publication.lock();
+                try {
+                    if (this.thread != thread) {
+                        // stopped while the transmitter was called: the result is not
+                        // published, and a stream created on the way is not left behind
+                        if (registration.created() && this.deleteOnShutdown) {
+                            deleteQuietly(registration.stream().streamId());
+                        }
+                        return;
                     }
-                    return;
+                    publish(registration);
                 }
-                publish(registration);
+                finally {
+                    this.publication.unlock();
+                }
                 return;
             }
             catch (SsfStreamIssuerMismatchException ex) {
