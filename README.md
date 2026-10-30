@@ -29,10 +29,11 @@ against the OpenID conformance suite's SSF and CAEP receiver test plans, with PU
 |---|---|---|
 | **Plain Java** | `org.easyssf:easyssf-receiver` | The receiver as a library without framework dependencies: verifier, processor, push handler, poller and stream management, wired into your framework by you. See [Assembling the receiver in plain Java](#assembling-the-receiver-in-plain-java). |
 | **Spring Boot** | `org.easyssf:easyssf-receiver-spring-boot-starter` | Auto-configuration for Spring Boot 4.1: properties, the push endpoint with Spring Security, resource server and OIDC client integration, JDBC stores, metrics and health. See the [README of the starter](easyssf-receiver-spring-boot-starter/README.md). |
-| **Quarkus** | `io.quarkiverse.openid-ssf:quarkus-openid-ssf-receiver` | The Quarkiverse extension, built on `easyssf-receiver` since its 0.2.0: configuration, CDI, a Vert.x push route, Dev UI, native images. Maintained in [its own repository](https://github.com/quarkiverse/quarkus-openid-ssf), documented at [docs.quarkiverse.io](https://docs.quarkiverse.io/quarkus-openid-ssf/dev/index.html). |
+| **Quarkus** | `io.quarkiverse.openid-ssf:quarkus-openid-ssf-receiver` | The Quarkiverse extension, built on `easyssf-receiver`: configuration, CDI, a Vert.x push route, Dev UI, native images. Maintained in [its own repository](https://github.com/quarkiverse/quarkus-openid-ssf), documented at [docs.quarkiverse.io](https://docs.quarkiverse.io/quarkus-openid-ssf/dev/index.html). |
 
 The library and the starter are released together under the group id `org.easyssf` and require
-Java 21 or later; the extension follows every easyssf release.
+Java 21 or later; the extension follows every easyssf release under the same version, 0.7.0 on
+easyssf 0.7.0.
 
 | Module | | Depends on |
 |---|---|---|
