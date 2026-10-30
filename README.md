@@ -101,7 +101,7 @@ session are rejected and local sessions are ended as the events arrive. The
 <dependency>
     <groupId>io.quarkiverse.openid-ssf</groupId>
     <artifactId>quarkus-openid-ssf-receiver</artifactId>
-    <version>0.2.0</version>
+    <version>0.7.0</version>
 </dependency>
 ```
 
