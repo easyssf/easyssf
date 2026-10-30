@@ -74,7 +74,7 @@ which a build has to enable with `<snapshots><enabled>true</enabled></snapshots>
 <dependency>
     <groupId>org.easyssf</groupId>
     <artifactId>easyssf-receiver-spring-boot-starter</artifactId>
-    <version>0.6.0</version>
+    <version>0.7.0</version>
 </dependency>
 ```
 
@@ -121,7 +121,7 @@ configuration reference.
 <dependency>
     <groupId>org.easyssf</groupId>
     <artifactId>easyssf-receiver</artifactId>
-    <version>0.6.0</version>
+    <version>0.7.0</version>
 </dependency>
 ```
 
@@ -295,7 +295,7 @@ Spring Boot modules are automatic modules.
 <dependency>
     <groupId>org.easyssf</groupId>
     <artifactId>easyssf-receiver</artifactId>
-    <version>0.6.0</version>
+    <version>0.7.0</version>
 </dependency>
 ```
 
@@ -382,7 +382,7 @@ stream management and poll endpoints. The tests of easyssf itself use it.
 <dependency>
     <groupId>org.easyssf</groupId>
     <artifactId>easyssf-test</artifactId>
-    <version>0.6.0</version>
+    <version>0.7.0</version>
     <scope>test</scope>
 </dependency>
 ```

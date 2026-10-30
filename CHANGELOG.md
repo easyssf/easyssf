@@ -6,6 +6,17 @@ The notable changes of every release. The section of a version is the text of it
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-30
+
+A release of hardening. A host name like `127.attacker.example` no longer passes for
+loopback, the poll endpoint is held to the same URI policy as the metadata endpoints
+before the access token goes to it, and responses from the transmitter are bounded,
+4 MiB by default. Every stream configuration the transmitter returns has its issuer
+checked, not only a created one. Stopping and starting a poller or a registrar again
+no longer leaves a thread or a stream behind, and the pending-acks gauge no longer
+turns `NaN`. The Quarkus extension mirrors the new `SsfPoller.setUriPolicy` and the
+maximum response size when it adopts this release.
+
 ### Security
 
 - A host name that merely starts with `127.`, such as `127.attacker.example`, counted as a loopback
@@ -256,7 +267,8 @@ Java library and as a Spring Boot 4.1 starter.
 - The framework-free modules are Java modules; every artifact is signed, carries a CycloneDX
   SBOM and a self-contained POM.
 
-[Unreleased]: https://github.com/easyssf/easyssf/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/easyssf/easyssf/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/easyssf/easyssf/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/easyssf/easyssf/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/easyssf/easyssf/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/easyssf/easyssf/compare/v0.3.0...v0.4.0
